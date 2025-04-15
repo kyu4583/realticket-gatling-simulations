@@ -9,6 +9,7 @@ import java.util.*;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static constants.Constants.FIXED_BOOKING_AMOUNT;
 import static constants.Constants.Url.ROOT_URL_HTTP;
 import static io.gatling.javaapi.core.CoreDsl.*;
 import static io.gatling.javaapi.http.HttpDsl.*;
@@ -78,7 +79,13 @@ public abstract class BasicBookingSimulation extends Simulation {
     protected ChainBuilder setUpUserNum() {
         return exec(session -> {
             int userNum = Counter.nextUser();
-            int bookingAmount = random.nextInt(4) + 1;
+            int bookingAmount;
+            if (FIXED_BOOKING_AMOUNT > 0) {
+                bookingAmount = FIXED_BOOKING_AMOUNT;
+            }
+            else {
+                bookingAmount = random.nextInt(4) + 1;
+            }
             return session
                     .set("userNum", userNum)
                     .set("bookingAmount", bookingAmount);

@@ -11,4 +11,6 @@ public final class Constants {
         public static final String ROOT_URL_HTTP = "http://" + ROOT_URL;
         public static final String ROOT_URL_WS = "ws://" + ROOT_URL;
     }
+
+    public static final int FIXED_BOOKING_AMOUNT = 3;
 }
