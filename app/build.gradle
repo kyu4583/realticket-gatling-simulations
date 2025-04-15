@@ -40,3 +40,28 @@ application {
 tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
 }
+
+tasks.register('gatlingRunAndArchive') {
+    dependsOn 'gatlingRun'
+    doLast {
+        def timestamp = new Date().format('yyyyMMdd_HHmmss')
+        def gatlingReportsDir = file("build/reports/gatling")
+
+        if (gatlingReportsDir.exists()) {
+            def reportDirs = gatlingReportsDir.listFiles().findAll { it.isDirectory() }
+
+            reportDirs.sort { a, b -> b.name <=> a.name }
+            if (reportDirs) {
+                def latestDir = reportDirs.first()
+                def tail = latestDir.name.split("_").last()
+                def destDir = file("../archive/results_${timestamp}/${tail}")
+                destDir.mkdirs()
+                copy {
+                    from latestDir
+                    into destDir
+                }
+                println "시뮬레이션 결과가 ${destDir}에 아카이브되었습니다."
+            }
+        }
+    }
+}
