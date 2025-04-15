@@ -80,7 +80,7 @@ public abstract class BasicBookingSimulation extends Simulation {
         return exec(session -> {
             int userNum = Counter.nextUser();
             int bookingAmount;
-            if (FIXED_BOOKING_AMOUNT > 0) {
+            if (FIXED_BOOKING_AMOUNT >= 0) {
                 bookingAmount = FIXED_BOOKING_AMOUNT;
             }
             else {

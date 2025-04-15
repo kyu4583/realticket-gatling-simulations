@@ -12,5 +12,6 @@ public final class Constants {
         public static final String ROOT_URL_WS = "ws://" + ROOT_URL;
     }
 
+    // 음수 대입 시 랜덤으로 설정됨
     public static final int FIXED_BOOKING_AMOUNT = 3;
 }
