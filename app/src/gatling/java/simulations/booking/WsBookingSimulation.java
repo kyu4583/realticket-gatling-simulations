@@ -9,6 +9,7 @@ import io.gatling.javaapi.http.HttpProtocolBuilder;
 import java.util.ArrayList;
 import java.util.List;
 
+import static constants.Constants.Url.ROOT_URL_WS;
 import static io.gatling.javaapi.core.CoreDsl.atOnceUsers;
 import static io.gatling.javaapi.core.CoreDsl.jsonPath;
 import static io.gatling.javaapi.http.HttpDsl.ws;
@@ -24,7 +25,7 @@ public class WsBookingSimulation extends BasicBookingSimulation {
 
     @Override
     protected ActionBuilder subscribeSeatsAndInitAvailableSeats() {
-        return ws("웹소켓 연결").connect("ws://localhost:8080/benchmark/seat?eventId=" + TARGET_EVENT).await(32).on(
+        return ws("웹소켓 연결").connect(ROOT_URL_WS + "/benchmark/seat?eventId=" + TARGET_EVENT).await(32).on(
                 ws.checkTextMessage("메시지 형태 체크")
                         .check(
                                 jsonPath("$.data.seatStatus").exists(),

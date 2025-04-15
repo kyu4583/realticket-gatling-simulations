@@ -9,6 +9,7 @@ import java.util.*;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static constants.Constants.Url.ROOT_URL_HTTP;
 import static io.gatling.javaapi.core.CoreDsl.*;
 import static io.gatling.javaapi.http.HttpDsl.*;
 import static util.SkewedRandomDelay.generateSkewedDuration;
@@ -44,9 +45,7 @@ public abstract class BasicBookingSimulation extends Simulation {
     }
 
     protected HttpProtocolBuilder httpProtocol = http
-            // 기본 URL = FE(nginx)의 api 프록시 경로: "http://localhost:30000/api"
-            // (선택) BE로 다이렉트: "http://localhost:8080"
-            .baseUrl("http://localhost:30000/api")
+            .baseUrl(ROOT_URL_HTTP)
             .acceptHeader("application/json")
             .contentTypeHeader("application/json")
             .userAgentHeader("Gatling/Performance Test")
