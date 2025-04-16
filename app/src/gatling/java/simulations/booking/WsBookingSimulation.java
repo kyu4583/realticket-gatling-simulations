@@ -49,11 +49,11 @@ public class WsBookingSimulation extends BasicBookingSimulation {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             try {
                 String seatStatusStr = mapper.readTree(jsonStr).get("data").get("seatStatus").toString();
-                boolean[][] seatStatus = mapper.readValue(seatStatusStr, boolean[][].class);
+                int[][] seatStatus = mapper.readValue(seatStatusStr, int[][].class);
                 List<int[]> availableSeats = new ArrayList<>();
                 for (int sectionIdx = 0; sectionIdx < seatStatus.length; sectionIdx++) {
                     for (int seatIdx = 0; seatIdx < seatStatus[sectionIdx].length; seatIdx++) {
-                        if (seatStatus[sectionIdx][seatIdx]) {
+                        if (seatStatus[sectionIdx][seatIdx] == 1) {
                             availableSeats.add(new int[]{sectionIdx, seatIdx});
                         }
                     }
@@ -67,7 +67,7 @@ public class WsBookingSimulation extends BasicBookingSimulation {
 
     {
         // 시뮬레이션 설정
-        setUp(scn.injectOpen(atOnceUsers(65))).protocols(httpProtocol);
+        setUp(scn.injectOpen(atOnceUsers(3))).protocols(httpProtocol);
 
         /*
          시뮬레이션 설정 예제

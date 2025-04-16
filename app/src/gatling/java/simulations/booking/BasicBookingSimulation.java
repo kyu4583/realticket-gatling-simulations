@@ -133,10 +133,10 @@ public abstract class BasicBookingSimulation extends Simulation {
         List<int[]> availableSeats = new ArrayList<>();
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         try {
-            boolean[][] seatStatus = mapper.readValue(seatStatusJsonStr, boolean[][].class);
+            int[][] seatStatus = mapper.readValue(seatStatusJsonStr, int[][].class);
             for (int sectionIdx = 0; sectionIdx < seatStatus.length; sectionIdx++) {
                 for (int seatIdx = 0; seatIdx < seatStatus[sectionIdx].length; seatIdx++) {
-                    if (seatStatus[sectionIdx][seatIdx]) {
+                    if (seatStatus[sectionIdx][seatIdx] == 1) {
                         availableSeats.add(new int[]{sectionIdx, seatIdx});
                     }
                 }
