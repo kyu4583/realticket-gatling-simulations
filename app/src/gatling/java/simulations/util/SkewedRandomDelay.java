@@ -1,6 +1,5 @@
-package util;
+package simulations.util;
 
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 

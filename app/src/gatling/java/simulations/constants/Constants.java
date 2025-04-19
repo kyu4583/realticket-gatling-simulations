@@ -1,4 +1,4 @@
-package constants;
+package simulations.constants;
 
 public final class Constants {
     private Constants() {

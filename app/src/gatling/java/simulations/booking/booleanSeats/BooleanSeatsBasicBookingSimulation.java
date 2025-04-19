@@ -14,12 +14,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static constants.Constants.FIXED_BOOKING_AMOUNT;
-import static constants.Constants.Url.ROOT_URL_HTTP;
+import static simulations.constants.Constants.FIXED_BOOKING_AMOUNT;
+import static simulations.constants.Constants.Url.ROOT_URL_HTTP;
 import static io.gatling.javaapi.core.CoreDsl.*;
 import static io.gatling.javaapi.http.HttpDsl.http;
 import static io.gatling.javaapi.http.HttpDsl.status;
-import static util.SkewedRandomDelay.generateSkewedDuration;
+import static simulations.util.SkewedRandomDelay.generateSkewedDuration;
 
 public abstract class BooleanSeatsBasicBookingSimulation extends Simulation {
     protected static final int TARGET_EVENT = 1;
