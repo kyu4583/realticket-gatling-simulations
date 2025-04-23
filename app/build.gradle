@@ -46,11 +46,9 @@ tasks.register('gatlingRunAndArchive') {
     doLast {
         def timestamp = new Date().format('yyyyMMdd_HHmmss')
         def gatlingReportsDir = file("build/reports/gatling")
-
         if (gatlingReportsDir.exists()) {
             def reportDirs = gatlingReportsDir.listFiles().findAll { it.isDirectory() }
-
-            reportDirs.sort { a, b -> b.name <=> a.name }
+            reportDirs.sort { a, b -> b.lastModified() <=> a.lastModified() }
             if (reportDirs) {
                 def latestDir = reportDirs.first()
                 def tail = latestDir.name.split("_").last()
