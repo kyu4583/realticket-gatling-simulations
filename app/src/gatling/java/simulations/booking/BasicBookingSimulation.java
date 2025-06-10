@@ -60,18 +60,27 @@ public abstract class BasicBookingSimulation extends Simulation {
                 .exec(loginWithTestAccount())
                 .pause(RandDelay.afterLogin())
 
-                .exec(checkPermission()).exitHereIfFailed()
+                .exec(waitBetweenActions())
 
+                .exec(checkPermission()).exitHereIfFailed()
                 .pause(RandDelay.beforeBookingAmountSet())
                 .exec(setBookingAmount())
                 .exec(subscribeSeatsAndInitAvailableSeats())
-
                 .exec(bookSeatsWithRetry())
 
                 .exec(saveBookedSeatsAsJson())
 
+                .exec(waitBetweenActions())
                 .pause(RandDelay.beforeConfirmReservation())
-                .exec(confirmReservation());
+                .exec(confirmReservation())
+                ;
+    }
+
+    protected ChainBuilder waitBetweenActions() {
+        if (ENABLE_WAITING_BETWEEN_ACTIONS) {
+            return pause(Duration.ofMillis(WAITING_SECOND_BETWEEN_ACTIONS_MILLIS));
+        }
+        return exec(session -> {return session;});
     }
 
     protected ChainBuilder setUpUserNum() {

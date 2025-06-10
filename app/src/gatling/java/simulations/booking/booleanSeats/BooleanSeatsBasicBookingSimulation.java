@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static simulations.constants.Constants.FIXED_BOOKING_AMOUNT;
+import static simulations.constants.Constants.*;
 import static simulations.constants.Constants.Url.ROOT_URL_HTTP;
 import static io.gatling.javaapi.core.CoreDsl.*;
 import static io.gatling.javaapi.http.HttpDsl.http;
@@ -68,18 +68,28 @@ public abstract class BooleanSeatsBasicBookingSimulation extends Simulation {
                 .exec(loginWithTestAccount())
                 .pause(RandDelay.afterLogin())
 
-                .exec(checkPermission()).exitHereIfFailed()
+                .exec(waitBetweenActions())
 
+                .exec(checkPermission()).exitHereIfFailed()
                 .pause(RandDelay.beforeBookingAmountSet())
                 .exec(setBookingAmount())
                 .exec(subscribeSeatsAndInitAvailableSeats())
-
                 .exec(bookSeatsWithRetry())
 
                 .exec(saveBookedSeatsAsJson())
 
+                .exec(waitBetweenActions())
                 .pause(RandDelay.beforeConfirmReservation())
-                .exec(confirmReservation());
+                .exec(confirmReservation())
+                ;
+    }
+
+
+    protected ChainBuilder waitBetweenActions() {
+        if (ENABLE_WAITING_BETWEEN_ACTIONS) {
+            return pause(Duration.ofMillis(WAITING_SECOND_BETWEEN_ACTIONS_MILLIS));
+        }
+        return exec(session -> {return session;});
     }
 
     protected ChainBuilder setUpUserNum() {

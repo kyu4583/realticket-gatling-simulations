@@ -12,6 +12,10 @@ public final class Constants {
         public static final String ROOT_URL_WS = "ws://" + ROOT_URL;
     }
 
+    public static final boolean ENABLE_WAITING_BETWEEN_ACTIONS = true;
+    public static final int WAITING_SECOND_BETWEEN_ACTIONS_MILLIS = 60000;
+
+
     // 음수 대입 시 랜덤으로 설정됨
     public static final int FIXED_BOOKING_AMOUNT = 3;
 
