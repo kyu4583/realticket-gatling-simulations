@@ -18,6 +18,8 @@ public final class Constants {
     public static final boolean ENABLE_STAGGERED_LOGIN = true;
     public static final int STAGGERED_LOGIN_TIME_RANGE_MILLIS = 240000;
 
+    public static final boolean ENABLE_SKIP_CONFIRM_RESERVATIONS = true;
+
     // 음수 대입 시 랜덤으로 설정됨
     public static final int FIXED_BOOKING_AMOUNT = 3;
 

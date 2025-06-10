@@ -76,8 +76,7 @@ public abstract class BasicBookingSimulation extends Simulation {
                 .exec(saveBookedSeatsAsJson())
 
                 .exec(waitBetweenActions())
-                .pause(RandDelay.beforeConfirmReservation())
-                .exec(confirmReservation())
+                .exec(confirmReservationIfEnable(true))
                 ;
     }
 
@@ -263,6 +262,17 @@ public abstract class BasicBookingSimulation extends Simulation {
             }
             return session;
         });
+    }
+
+    protected ChainBuilder confirmReservationIfEnable(boolean enableDelayBefore) {
+        ChainBuilder result = exec(session -> session);
+        if (enableDelayBefore) {
+            result = pause(RandDelay.beforeConfirmReservation());
+        }
+        if (ENABLE_SKIP_CONFIRM_RESERVATIONS) {
+            return result;
+        }
+        return result.exec(confirmReservation());
     }
 
     protected ActionBuilder confirmReservation() {
