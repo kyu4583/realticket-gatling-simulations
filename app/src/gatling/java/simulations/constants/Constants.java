@@ -14,4 +14,8 @@ public final class Constants {
 
     // 음수 대입 시 랜덤으로 설정됨
     public static final int FIXED_BOOKING_AMOUNT = 3;
+
+    public static final int TARGET_EVENT = 1;
+
+    public static final int MAX_RETRY_IN_BOOKING_CONFLICT = 50;
 }

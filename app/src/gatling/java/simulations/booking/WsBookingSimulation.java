@@ -9,6 +9,7 @@ import io.gatling.javaapi.http.HttpProtocolBuilder;
 import java.util.ArrayList;
 import java.util.List;
 
+import static simulations.constants.Constants.TARGET_EVENT;
 import static simulations.constants.Constants.Url.ROOT_URL_WS;
 import static io.gatling.javaapi.core.CoreDsl.atOnceUsers;
 import static io.gatling.javaapi.core.CoreDsl.jsonPath;

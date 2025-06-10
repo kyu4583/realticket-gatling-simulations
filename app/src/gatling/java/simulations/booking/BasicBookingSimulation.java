@@ -9,15 +9,13 @@ import java.util.*;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static simulations.constants.Constants.FIXED_BOOKING_AMOUNT;
+import static simulations.constants.Constants.*;
 import static simulations.constants.Constants.Url.ROOT_URL_HTTP;
 import static io.gatling.javaapi.core.CoreDsl.*;
 import static io.gatling.javaapi.http.HttpDsl.*;
 import static simulations.util.SkewedRandomDelay.generateSkewedDuration;
 
 public abstract class BasicBookingSimulation extends Simulation {
-    protected static final int TARGET_EVENT = 1;
-    protected static final int MAX_RETRY_IN_BOOKING_CONFLICT = 50;
     protected static final SecureRandom random = new SecureRandom();
 
     protected static class Counter {
