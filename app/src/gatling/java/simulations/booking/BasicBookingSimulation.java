@@ -26,6 +26,8 @@ public abstract class BasicBookingSimulation extends Simulation {
     }
 
     protected static class RandDelay {
+        public static Duration staggeredLoginWaiting() { return generateSkewedDuration(0, STAGGERED_LOGIN_TIME_RANGE_MILLIS, 1.0);}
+
         public static Duration afterLogin() {
             return generateSkewedDuration(300, 5000);
         }
@@ -56,8 +58,11 @@ public abstract class BasicBookingSimulation extends Simulation {
 
     protected ScenarioBuilder createScenario(String scenarioName) {
         return scenario(scenarioName)
+                .exec(setStaggeredLogin())
+                .exec(waitBeforeStaggeredLogin())
                 .exec(setUpUserNum())
                 .exec(loginWithTestAccount())
+                .exec(waitAfterStaggeredLogin())
                 .pause(RandDelay.afterLogin())
 
                 .exec(waitBetweenActions())
@@ -76,11 +81,37 @@ public abstract class BasicBookingSimulation extends Simulation {
                 ;
     }
 
+    protected ChainBuilder setStaggeredLogin() {
+        if (ENABLE_STAGGERED_LOGIN) {
+            return exec(session -> {
+                Duration delay = RandDelay.staggeredLoginWaiting();
+                return session
+                        .set("beforeStaggeredLoginWaiting", delay)
+                        .set("afterStaggeredLoginWaiting", Duration.ofMillis(STAGGERED_LOGIN_TIME_RANGE_MILLIS).minus(delay));
+            });
+        }
+        return exec(session -> session);
+    }
+
+    protected ChainBuilder waitBeforeStaggeredLogin() {
+        if (ENABLE_STAGGERED_LOGIN) {
+            return pause("#{beforeStaggeredLoginWaiting}");
+        }
+        return exec(session -> session);
+    }
+
+    protected ChainBuilder waitAfterStaggeredLogin() {
+        if (ENABLE_STAGGERED_LOGIN) {
+            return pause("#{afterStaggeredLoginWaiting}");
+        }
+        return exec(session -> session);
+    }
+
     protected ChainBuilder waitBetweenActions() {
         if (ENABLE_WAITING_BETWEEN_ACTIONS) {
             return pause(Duration.ofMillis(WAITING_SECOND_BETWEEN_ACTIONS_MILLIS));
         }
-        return exec(session -> {return session;});
+        return exec(session -> session);
     }
 
     protected ChainBuilder setUpUserNum() {
