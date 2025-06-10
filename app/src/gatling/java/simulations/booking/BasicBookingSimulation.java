@@ -9,8 +9,8 @@ import java.util.*;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static simulations.constants.Constants.*;
-import static simulations.constants.Constants.Url.ROOT_URL_HTTP;
+import static simulations.config.Config.*;
+import static simulations.config.Config.Url.ROOT_URL_HTTP;
 import static io.gatling.javaapi.core.CoreDsl.*;
 import static io.gatling.javaapi.http.HttpDsl.*;
 import static simulations.util.SkewedRandomDelay.generateSkewedDuration;

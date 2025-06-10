@@ -5,12 +5,11 @@ import io.gatling.http.action.ws.WsInboundMessage;
 import io.gatling.javaapi.core.ActionBuilder;
 import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.http.HttpProtocolBuilder;
-import simulations.booking.BasicBookingSimulation;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static simulations.constants.Constants.Url.ROOT_URL_WS;
+import static simulations.config.Config.Url.ROOT_URL_WS;
 import static io.gatling.javaapi.core.CoreDsl.atOnceUsers;
 import static io.gatling.javaapi.core.CoreDsl.jsonPath;
 import static io.gatling.javaapi.http.HttpDsl.ws;
