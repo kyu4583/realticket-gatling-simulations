@@ -6,9 +6,6 @@ import io.gatling.javaapi.core.ActionBuilder;
 import io.gatling.javaapi.core.ScenarioBuilder;
 import io.gatling.javaapi.http.HttpProtocolBuilder;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import static simulations.config.Config.*;
 import static simulations.config.Config.Url.ROOT_URL_HTTP;
 import static io.gatling.javaapi.core.CoreDsl.atOnceUsers;
@@ -59,29 +56,10 @@ public class SseBookingSimulation extends BasicBookingSimulation {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             try {
                 String seatStatusStr = mapper.readTree(jsonStr).get("data").get("seatStatus").toString();
-
                 if (ENABLE_BOOLEAN_SEATS_FORMAT) {
-                    boolean[][] seatStatus = mapper.readValue(seatStatusStr, boolean[][].class);
-                    List<int[]> availableSeats = new ArrayList<>();
-                    for (int sectionIdx = 0; sectionIdx < seatStatus.length; sectionIdx++) {
-                        for (int seatIdx = 0; seatIdx < seatStatus[sectionIdx].length; seatIdx++) {
-                            if (seatStatus[sectionIdx][seatIdx]) {
-                                availableSeats.add(new int[]{sectionIdx, seatIdx});
-                            }
-                        }
-                    }
-                    return session.set("availableSeats", availableSeats);
+                    return session.set("availableSeats", parseAvailableSeatsFromBooleanJsonStr(seatStatusStr));
                 } else {
-                    int[][] seatStatus = mapper.readValue(seatStatusStr, int[][].class);
-                    List<int[]> availableSeats = new ArrayList<>();
-                    for (int sectionIdx = 0; sectionIdx < seatStatus.length; sectionIdx++) {
-                        for (int seatIdx = 0; seatIdx < seatStatus[sectionIdx].length; seatIdx++) {
-                            if (seatStatus[sectionIdx][seatIdx] == 1) {
-                                availableSeats.add(new int[]{sectionIdx, seatIdx});
-                            }
-                        }
-                    }
-                    return session.set("availableSeats", availableSeats);
+                    return session.set("availableSeats", parseAvailableSeatsFromBitJsonStr(seatStatusStr));
                 }
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
