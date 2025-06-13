@@ -20,6 +20,8 @@ public final class Config {
 
     public static final boolean ENABLE_SKIP_CONFIRM_RESERVATIONS = true;
 
+    public static final boolean ENABLE_BOOLEAN_SEATS_FORMAT = false;
+
     // 음수 대입 시 랜덤으로 설정됨
     public static final int FIXED_BOOKING_AMOUNT = 3;
 
