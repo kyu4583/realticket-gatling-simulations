@@ -58,6 +58,16 @@ tasks.register('gatlingRunAndArchive') {
                     from latestDir
                     into destDir
                 }
+
+                def configDestDir = file("../archive/results_${timestamp}")
+                def configDir = file("src/gatling/java/simulations/config")
+                if (configDir.exists()) {
+                    copy {
+                        from configDir
+                        into configDestDir
+                    }
+                }
+
                 println "시뮬레이션 결과가 ${destDir}에 아카이브되었습니다."
             }
         }
