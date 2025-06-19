@@ -64,12 +64,12 @@ public abstract class BasicBookingSimulation extends Simulation {
                 .exec(setUpUserNum())
                 .exec(loginWithTestAccount())
                 .exec(waitAfterStaggeredLogin())
-                .pause(RandDelay.afterLogin())
+                .pause(session -> RandDelay.afterLogin())
 
                 .exec(waitBetweenActions())
 
                 .exec(checkPermission()).exitHereIfFailed()
-                .pause(RandDelay.beforeBookingAmountSet())
+                .pause(session -> RandDelay.beforeBookingAmountSet())
                 .exec(setBookingAmount())
                 .exec(subscribeSeatsAndInitAvailableSeats())
                 .exec(bookSeatsWithRetry())
@@ -213,7 +213,7 @@ public abstract class BasicBookingSimulation extends Simulation {
         return exec(
                 repeat("#{bookingAmount}").on(
                         tryMax(MAX_RETRY_IN_BOOKING_CONFLICT).on(
-                                pause(RandDelay.betweenBooking()),
+                                pause(session -> RandDelay.betweenBooking()),
                                 exec(reloadAvailableSeats()),
                                 exec(selectSingleSeat()).exitHereIfFailed(),
                                 http("좌석 점유")
@@ -292,7 +292,7 @@ public abstract class BasicBookingSimulation extends Simulation {
     protected ChainBuilder confirmReservationIfEnable(boolean enableDelayBefore) {
         ChainBuilder result = exec(session -> session);
         if (enableDelayBefore) {
-            result = pause(RandDelay.beforeConfirmReservation());
+            result = pause(session -> RandDelay.beforeConfirmReservation());
         }
         if (ENABLE_SKIP_CONFIRM_RESERVATIONS) {
             return result;
