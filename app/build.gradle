@@ -65,7 +65,19 @@ tasks.register('gatlingRunAndArchive') {
                     copy {
                         from configDir
                         into configDestDir
+                        rename {"Config_${timestamp}.java"}
                     }
+                }
+
+                def logFile = file("C:/Users/kxu45/ProgramStudy/gatling-practice/realticket-gatling-simulations/archive/gatling-log-latest/log_latest.log")
+                if (logFile.exists()) {
+                    copy {
+                        from logFile
+                        into destDir
+                        rename { "gatling-runtime-log_${timestamp}.log" }
+                    }
+                } else {
+                    println "log_latest.log 파일을 찾을 수 없습니다: ${logFile}"
                 }
 
                 println "시뮬레이션 결과가 ${destDir}에 아카이브되었습니다."
