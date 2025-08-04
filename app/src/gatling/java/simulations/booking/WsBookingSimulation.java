@@ -1,6 +1,7 @@
 package simulations.booking;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.gatling.http.action.ws.WsInboundMessage;
 import io.gatling.javaapi.core.ActionBuilder;
 import io.gatling.javaapi.core.ScenarioBuilder;
@@ -28,7 +29,16 @@ public class WsBookingSimulation extends BasicBookingSimulation {
                         .check(
                                 jsonPath("$.data.seatStatus").exists(),
                                 jsonPath("$.data.seatStatus")
-                                        .transform(jsonStr -> parseAvailableSeatsFromJsonStr(jsonStr))
+                                        .transform(seatsStr -> {
+                                            try {
+                                                com.fasterxml.jackson.databind.ObjectMapper mapper =
+                                                        new com.fasterxml.jackson.databind.ObjectMapper();
+                                                return mapper.readTree(seatsStr);
+                                            } catch (Exception e) {
+                                                throw new RuntimeException("데이터 파싱 오류: " + e.getMessage());
+                                            }
+                                        })
+                                        .transform(seatsJson -> parseAvailableSeatsFromJson(seatsJson))
                                         .saveAs("availableSeats")
                         )
         );
@@ -46,11 +56,13 @@ public class WsBookingSimulation extends BasicBookingSimulation {
             String jsonStr = data.substring(data.indexOf(",") + 1, data.lastIndexOf("}") + 1);
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             try {
-                String seatStatusStr = mapper.readTree(jsonStr).get("data").get("seatStatus").toString();
+                JsonNode seatStatusJson = mapper.readTree(jsonStr).get("data").get("seatStatus");
                 if (ENABLE_BOOLEAN_SEATS_FORMAT) {
-                    return session.set("availableSeats", parseAvailableSeatsFromBooleanJsonStr(seatStatusStr));
+                    boolean[][] seatStatus = mapper.treeToValue(seatStatusJson, boolean[][].class);
+                    return session.set("availableSeats", getAvailableSeatsFromBooleanSeats(seatStatus));
                 } else {
-                    return session.set("availableSeats", parseAvailableSeatsFromBitJsonStr(seatStatusStr));
+                    int[][] seatStatus = mapper.treeToValue(seatStatusJson, int[][].class);
+                    return session.set("availableSeats", getAvailableSeatsFromBitSeats(seatStatus));
                 }
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);

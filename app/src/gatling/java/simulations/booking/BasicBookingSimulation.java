@@ -1,6 +1,7 @@
 package simulations.booking;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.gatling.javaapi.core.*;
 import io.gatling.javaapi.http.*;
 
@@ -167,13 +168,16 @@ public abstract class BasicBookingSimulation extends Simulation {
 
     protected abstract ActionBuilder subscribeSeatsAndInitAvailableSeats();
 
-    protected List<int[]> parseAvailableSeatsFromJsonStr(String seatStatusJsonStr) {
+    protected List<int[]> parseAvailableSeatsFromJson(JsonNode seatStatusJson) {
         List<int[]> availableSeats = new ArrayList<>();
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         try {
             if (ENABLE_BOOLEAN_SEATS_FORMAT) {
-                availableSeats = parseAvailableSeatsFromBooleanJsonStr(seatStatusJsonStr);
+                boolean[][] seatStatus = mapper.treeToValue(seatStatusJson, boolean[][].class);
+                availableSeats = getAvailableSeatsFromBooleanSeats(seatStatus);
             } else {
-                availableSeats = parseAvailableSeatsFromBitJsonStr(seatStatusJsonStr);
+                int[][] seatStatus = mapper.treeToValue(seatStatusJson, int[][].class);
+                availableSeats = getAvailableSeatsFromBitSeats(seatStatus);
             }
         } catch (Exception e) {
             System.err.println("좌석 상태 파싱 오류: " + e.getMessage());
@@ -181,10 +185,8 @@ public abstract class BasicBookingSimulation extends Simulation {
         return availableSeats;
     }
 
-    protected List<int[]> parseAvailableSeatsFromBitJsonStr(String seatStatusJsonStr) throws JsonProcessingException {
+    protected List<int[]> getAvailableSeatsFromBitSeats(int[][] seatStatus) throws JsonProcessingException {
         List<int[]> availableSeats = new ArrayList<>();
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        int[][] seatStatus = mapper.readValue(seatStatusJsonStr, int[][].class);
         for (int sectionIdx = 0; sectionIdx < seatStatus.length; sectionIdx++) {
             for (int seatIdx = 0; seatIdx < seatStatus[sectionIdx].length; seatIdx++) {
                 if (seatStatus[sectionIdx][seatIdx] == 1) {
@@ -195,10 +197,8 @@ public abstract class BasicBookingSimulation extends Simulation {
         return availableSeats;
     }
 
-    protected List<int[]> parseAvailableSeatsFromBooleanJsonStr(String seatStatusJsonStr) throws JsonProcessingException {
+    protected List<int[]> getAvailableSeatsFromBooleanSeats(boolean[][] seatStatus) throws JsonProcessingException {
         List<int[]> availableSeats = new ArrayList<>();
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        boolean[][] seatStatus = mapper.readValue(seatStatusJsonStr, boolean[][].class);
         for (int sectionIdx = 0; sectionIdx < seatStatus.length; sectionIdx++) {
             for (int seatIdx = 0; seatIdx < seatStatus[sectionIdx].length; seatIdx++) {
                 if (seatStatus[sectionIdx][seatIdx]) {
