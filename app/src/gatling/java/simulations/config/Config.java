@@ -18,6 +18,9 @@ public final class Config {
     public static final boolean ENABLE_STAGGERED_LOGIN = true;
     public static final int STAGGERED_LOGIN_TIME_RANGE_MILLIS = 240000;
 
+    public static final boolean ENABLE_WAITING_AFTER_SUBS = true;
+    public static final int WAITING_AFTER_SUBS_MILLIS = 45000;
+
     public static final boolean ENABLE_SKIP_CONFIRM_RESERVATIONS = true;
 
     public static final boolean ENABLE_BOOLEAN_SEATS_FORMAT = false;

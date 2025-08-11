@@ -73,6 +73,7 @@ public abstract class BasicBookingSimulation extends Simulation {
                 .pause(session -> RandDelay.beforeBookingAmountSet())
                 .exec(setBookingAmount())
                 .exec(subscribeSeatsAndInitAvailableSeats())
+                .exec(waitAfterSubscribe())
                 .exec(bookSeatsWithRetry())
 
                 .exec(saveBookedSeatsAsJson())
@@ -104,6 +105,13 @@ public abstract class BasicBookingSimulation extends Simulation {
     protected ChainBuilder waitAfterStaggeredLogin() {
         if (ENABLE_STAGGERED_LOGIN) {
             return pause("#{afterStaggeredLoginWaiting}");
+        }
+        return exec(session -> session);
+    }
+
+    protected ChainBuilder waitAfterSubscribe() {
+        if (ENABLE_WAITING_AFTER_SUBS) {
+            return pause(Duration.ofMillis(WAITING_AFTER_SUBS_MILLIS));
         }
         return exec(session -> session);
     }

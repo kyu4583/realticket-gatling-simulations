@@ -24,7 +24,7 @@ public class WsBookingSimulation extends BasicBookingSimulation {
 
     @Override
     protected ActionBuilder subscribeSeatsAndInitAvailableSeats() {
-        return ws("웹소켓 연결").connect(ROOT_URL_WS + "/benchmark/seat?eventId=" + TARGET_EVENT).await(32).on(
+        return ws("웹소켓 연결").connect(ROOT_URL_WS + "/benchmark/seat?eventId=" + TARGET_EVENT).await(100).on(
                 ws.checkTextMessage("메시지 형태 체크")
                         .check(
                                 jsonPath("$.data.seatStatus").exists(),
