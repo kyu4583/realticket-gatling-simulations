@@ -57,13 +57,8 @@ public class WsBookingSimulation extends BasicBookingSimulation {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             try {
                 JsonNode seatStatusJson = mapper.readTree(jsonStr).get("data").get("seatStatus");
-                if (ENABLE_BOOLEAN_SEATS_FORMAT) {
-                    boolean[][] seatStatus = mapper.treeToValue(seatStatusJson, boolean[][].class);
-                    return session.set("availableSeats", getAvailableSeatsFromBooleanSeats(seatStatus));
-                } else {
-                    int[][] seatStatus = mapper.treeToValue(seatStatusJson, int[][].class);
-                    return session.set("availableSeats", getAvailableSeatsFromBitSeats(seatStatus));
-                }
+                int[][] seatStatus = mapper.treeToValue(seatStatusJson, int[][].class);
+                return session.set("availableSeats", getAvailableSeats(seatStatus));
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }

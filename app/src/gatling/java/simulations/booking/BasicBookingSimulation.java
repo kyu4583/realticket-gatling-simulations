@@ -180,36 +180,19 @@ public abstract class BasicBookingSimulation extends Simulation {
         List<int[]> availableSeats = new ArrayList<>();
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         try {
-            if (ENABLE_BOOLEAN_SEATS_FORMAT) {
-                boolean[][] seatStatus = mapper.treeToValue(seatStatusJson, boolean[][].class);
-                availableSeats = getAvailableSeatsFromBooleanSeats(seatStatus);
-            } else {
-                int[][] seatStatus = mapper.treeToValue(seatStatusJson, int[][].class);
-                availableSeats = getAvailableSeatsFromBitSeats(seatStatus);
-            }
+            int[][] seatStatus = mapper.treeToValue(seatStatusJson, int[][].class);
+            availableSeats = getAvailableSeats(seatStatus);
         } catch (Exception e) {
             System.err.println("좌석 상태 파싱 오류: " + e.getMessage());
         }
         return availableSeats;
     }
 
-    protected List<int[]> getAvailableSeatsFromBitSeats(int[][] seatStatus) throws JsonProcessingException {
+    protected List<int[]> getAvailableSeats(int[][] seatStatus) throws JsonProcessingException {
         List<int[]> availableSeats = new ArrayList<>();
         for (int sectionIdx = 0; sectionIdx < seatStatus.length; sectionIdx++) {
             for (int seatIdx = 0; seatIdx < seatStatus[sectionIdx].length; seatIdx++) {
                 if (seatStatus[sectionIdx][seatIdx] == 1) {
-                    availableSeats.add(new int[]{sectionIdx, seatIdx});
-                }
-            }
-        }
-        return availableSeats;
-    }
-
-    protected List<int[]> getAvailableSeatsFromBooleanSeats(boolean[][] seatStatus) throws JsonProcessingException {
-        List<int[]> availableSeats = new ArrayList<>();
-        for (int sectionIdx = 0; sectionIdx < seatStatus.length; sectionIdx++) {
-            for (int seatIdx = 0; seatIdx < seatStatus[sectionIdx].length; seatIdx++) {
-                if (seatStatus[sectionIdx][seatIdx]) {
                     availableSeats.add(new int[]{sectionIdx, seatIdx});
                 }
             }

@@ -59,13 +59,8 @@ public class SseBookingSimulation extends BasicBookingSimulation {
                 JsonNode rootNode = mapper.readTree(jsonStr);
                 String dataStr = rootNode.get("data").asText();
                 JsonNode seatStatusJson = mapper.readTree(dataStr).get("seatStatus");
-                if (ENABLE_BOOLEAN_SEATS_FORMAT) {
-                    boolean[][] seatStatus = mapper.treeToValue(seatStatusJson, boolean[][].class);
-                    return session.set("availableSeats", getAvailableSeatsFromBooleanSeats(seatStatus));
-                } else {
-                    int[][] seatStatus = mapper.treeToValue(seatStatusJson, int[][].class);
-                    return session.set("availableSeats", getAvailableSeatsFromBitSeats(seatStatus));
-                }
+                int[][] seatStatus = mapper.treeToValue(seatStatusJson, int[][].class);
+                return session.set("availableSeats", getAvailableSeats(seatStatus));
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
