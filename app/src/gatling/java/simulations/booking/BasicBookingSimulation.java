@@ -72,7 +72,7 @@ public abstract class BasicBookingSimulation extends Simulation {
                 .exec(checkPermission()).exitHereIfFailed()
                 .pause(session -> RandDelay.beforeBookingAmountSet())
                 .exec(setBookingAmount())
-                .exec(subscribeSeatsAndInitAvailableSeats())
+                .exec(subscribeSeatsAndInitSeatStatus())
                 .exec(waitAfterSubscribe())
                 .exec(bookSeatsWithRetry())
 
@@ -174,30 +174,16 @@ public abstract class BasicBookingSimulation extends Simulation {
                 .check(status().in(200, 201));
     }
 
-    protected abstract ActionBuilder subscribeSeatsAndInitAvailableSeats();
+    protected abstract ActionBuilder subscribeSeatsAndInitSeatStatus();
 
-    protected List<int[]> parseAvailableSeatsFromJson(JsonNode seatStatusJson) {
-        List<int[]> availableSeats = new ArrayList<>();
+    protected int[][] parseSeatStatusFromJson(JsonNode seatStatusJson) {
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         try {
-            int[][] seatStatus = mapper.treeToValue(seatStatusJson, int[][].class);
-            availableSeats = getAvailableSeats(seatStatus);
+            return mapper.treeToValue(seatStatusJson, int[][].class);
         } catch (Exception e) {
             System.err.println("좌석 상태 파싱 오류: " + e.getMessage());
+            return new int[0][0];
         }
-        return availableSeats;
-    }
-
-    protected List<int[]> getAvailableSeats(int[][] seatStatus) throws JsonProcessingException {
-        List<int[]> availableSeats = new ArrayList<>();
-        for (int sectionIdx = 0; sectionIdx < seatStatus.length; sectionIdx++) {
-            for (int seatIdx = 0; seatIdx < seatStatus[sectionIdx].length; seatIdx++) {
-                if (seatStatus[sectionIdx][seatIdx] == 1) {
-                    availableSeats.add(new int[]{sectionIdx, seatIdx});
-                }
-            }
-        }
-        return availableSeats;
     }
 
     protected ChainBuilder bookSeatsWithRetry() {
@@ -205,7 +191,7 @@ public abstract class BasicBookingSimulation extends Simulation {
                 repeat("#{bookingAmount}").on(
                         tryMax(MAX_RETRY_IN_BOOKING_CONFLICT).on(
                                 pause(session -> RandDelay.betweenBooking()),
-                                exec(reloadAvailableSeats()),
+                                exec(reloadSeatStatus()),
                                 exec(selectSingleSeat()).exitHereIfFailed(),
                                 http("좌석 점유")
                                         .post("/booking")
@@ -227,18 +213,35 @@ public abstract class BasicBookingSimulation extends Simulation {
         );
     }
 
-    protected abstract ActionBuilder reloadAvailableSeats();
-
+    protected abstract ActionBuilder reloadSeatStatus();
 
     protected ChainBuilder selectSingleSeat() {
         return exec(session -> {
-            List<int[]> availableSeats = session.get("availableSeats");
-            if (availableSeats == null || availableSeats.isEmpty()) {
-                throw new RuntimeException("No available seats");
+            int[][] seatStatus = session.get("seatStatus");
+            if (seatStatus == null || seatStatus.length == 0) {
+                throw new RuntimeException("seatStatus를 읽는 데에 실패했습니다.");
             }
-            int randomIndex = random.nextInt(availableSeats.size());
-            int[] selectedSeat = availableSeats.get(randomIndex);
-            return session.set("selectedSeat", selectedSeat);
+
+            int totalSections = seatStatus.length;
+            int startSectionIdx = random.nextInt(totalSections);
+
+            for (int i = 0; i < totalSections; i++) {
+                int sectionIdx = (startSectionIdx + i) % totalSections;
+                int[] section = seatStatus[sectionIdx];
+
+                int sectionSize = section.length;
+                int startSeatIdx = random.nextInt(sectionSize);
+
+                for (int j = 0; j < sectionSize; j++) {
+                    int seatIdx = (startSeatIdx + j) % sectionSize;
+
+                    if (section[seatIdx] == 1) {
+                        return session.set("selectedSeat", new int[]{sectionIdx, seatIdx});
+                    }
+                }
+            }
+
+            throw new RuntimeException("점유 가능한 좌석이 존재하지 않습니다.");
         });
     }
 

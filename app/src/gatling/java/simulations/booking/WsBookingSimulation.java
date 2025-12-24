@@ -23,7 +23,7 @@ public class WsBookingSimulation extends BasicBookingSimulation {
             .exec(ws("웹소켓 종료").close());
 
     @Override
-    protected ActionBuilder subscribeSeatsAndInitAvailableSeats() {
+    protected ActionBuilder subscribeSeatsAndInitSeatStatus() {
         return ws("웹소켓 연결").connect(ROOT_URL_WS + "/benchmark/seat?eventId=" + TARGET_EVENT).await(100).on(
                 ws.checkTextMessage("메시지 형태 체크")
                         .check(
@@ -38,14 +38,14 @@ public class WsBookingSimulation extends BasicBookingSimulation {
                                                 throw new RuntimeException("데이터 파싱 오류: " + e.getMessage());
                                             }
                                         })
-                                        .transform(seatsJson -> parseAvailableSeatsFromJson(seatsJson))
-                                        .saveAs("availableSeats")
+                                        .transform(seatsJson -> parseSeatStatusFromJson(seatsJson))
+                                        .saveAs("seatStatus")
                         )
         );
     }
 
     @Override
-    protected ActionBuilder reloadAvailableSeats() {
+    protected ActionBuilder reloadSeatStatus() {
         return ws.processUnmatchedMessages((messages, session) -> {
             // 가장 최신 메시지 선택
             WsInboundMessage latest = messages.isEmpty() ? null : messages.get(messages.size() - 1);
@@ -58,7 +58,7 @@ public class WsBookingSimulation extends BasicBookingSimulation {
             try {
                 JsonNode seatStatusJson = mapper.readTree(jsonStr).get("data").get("seatStatus");
                 int[][] seatStatus = mapper.treeToValue(seatStatusJson, int[][].class);
-                return session.set("availableSeats", getAvailableSeats(seatStatus));
+                return session.set("seatStatus", seatStatus);
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }

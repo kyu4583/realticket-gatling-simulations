@@ -23,7 +23,7 @@ public class SseBookingSimulation extends BasicBookingSimulation {
                     .exec(sse("SSE 연결 종료").close());
 
     @Override
-    protected ActionBuilder subscribeSeatsAndInitAvailableSeats() {
+    protected ActionBuilder subscribeSeatsAndInitSeatStatus() {
         return sse("SSE 연결").get(ROOT_URL_HTTP + "/booking/seat/" + TARGET_EVENT).await(32).on(
                 sse.checkMessage("메시지 형태 체크")
                         .check(
@@ -38,14 +38,14 @@ public class SseBookingSimulation extends BasicBookingSimulation {
                                                 throw new RuntimeException("데이터 파싱 오류: " + e.getMessage());
                                             }
                                         })
-                                        .transform(seatsJson -> parseAvailableSeatsFromJson(seatsJson))
-                                        .saveAs("availableSeats")
+                                        .transform(seatsJson -> parseSeatStatusFromJson(seatsJson))
+                                        .saveAs("seatStatus")
                         )
         );
     }
 
     @Override
-    protected ActionBuilder reloadAvailableSeats() {
+    protected ActionBuilder reloadSeatStatus() {
         return sse.processUnmatchedMessages((messages, session) -> {
             // 가장 최신 메시지 선택
             SseInboundMessage latest = messages.isEmpty() ? null : messages.get(messages.size() - 1);
@@ -60,7 +60,7 @@ public class SseBookingSimulation extends BasicBookingSimulation {
                 String dataStr = rootNode.get("data").asText();
                 JsonNode seatStatusJson = mapper.readTree(dataStr).get("seatStatus");
                 int[][] seatStatus = mapper.treeToValue(seatStatusJson, int[][].class);
-                return session.set("availableSeats", getAvailableSeats(seatStatus));
+                return session.set("seatStatus", seatStatus);
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
