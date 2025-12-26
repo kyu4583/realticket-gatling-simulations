@@ -1,7 +1,9 @@
 package simulations.booking;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.gatling.javaapi.core.*;
 import io.gatling.javaapi.http.*;
 
@@ -19,6 +21,33 @@ import static simulations.util.SkewedRandomDelay.generateSkewedDuration;
 
 public abstract class BasicBookingSimulation extends Simulation {
     protected static final SecureRandom random = new SecureRandom();
+    protected static final Map<String, String> storedSessionIds = new HashMap<>();
+
+    static {
+        if (TEST_ACCOUNT_ALREADY_STORED) {
+            loadStoredSessionIds();
+        }
+    }
+
+    private static void loadStoredSessionIds() {
+        ObjectMapper mapper = new ObjectMapper();
+        try {
+            var inputStream = BasicBookingSimulation.class.getResourceAsStream("/stored_test_account_list.json");
+
+            if (inputStream == null) {
+                throw new RuntimeException("리소스 파일을 찾을 수 없음");
+            }
+
+            Map<String, String> loaded = mapper.readValue(inputStream, new TypeReference<Map<String, String>>() {});
+            storedSessionIds.putAll(loaded);
+            inputStream.close();
+            System.out.println("저장된 세션 ID " + loaded.size() + "개 로드 완료");
+
+        } catch (Exception e) {
+            System.err.println("세션 ID 파일 로드 실패: " + e.getMessage());
+            throw new RuntimeException(e);
+        }
+    }
 
     protected static class Counter {
         private static final AtomicInteger userCounter = new AtomicInteger(0);
@@ -52,7 +81,6 @@ public abstract class BasicBookingSimulation extends Simulation {
             .acceptHeader("application/json")
             .contentTypeHeader("application/json")
             .userAgentHeader("Gatling/Performance Test")
-            // 자동 쿠키 관리 활성화 (요청 간 쿠키 유지)
             .inferHtmlResources()
             .silentResources();
 
@@ -63,7 +91,7 @@ public abstract class BasicBookingSimulation extends Simulation {
                 .exec(setStaggeredLogin())
                 .exec(waitBeforeStaggeredLogin())
                 .exec(setUpUserNum())
-                .exec(loginWithTestAccount())
+                .exec(loginOrSetCookie())
                 .exec(waitAfterStaggeredLogin())
                 .pause(session -> RandDelay.afterLogin())
 
@@ -81,6 +109,24 @@ public abstract class BasicBookingSimulation extends Simulation {
                 .exec(waitBetweenActions())
                 .exec(confirmReservationIfEnable(true))
                 ;
+    }
+
+    protected ChainBuilder loginOrSetCookie() {
+        if (TEST_ACCOUNT_ALREADY_STORED) {
+            return exec(session -> {
+                int userNum = session.getInt("userNum");
+                String accountKey = "test" + userNum;
+                String sessionId = storedSessionIds.get(accountKey);
+
+                if (sessionId == null) {
+                    throw new RuntimeException("저장된 세션 ID를 찾을 수 없습니다: " + accountKey);
+                }
+
+                return session.set("storedSessionId", sessionId);
+            }).exec(addCookie(Cookie("SID", "#{storedSessionId}").withPath("/")));
+        } else {
+            return exec(loginWithTestAccount());
+        }
     }
 
     protected ChainBuilder setStaggeredLogin() {

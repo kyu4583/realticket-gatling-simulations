@@ -12,6 +12,8 @@ public final class Config {
         public static final String ROOT_URL_WS = "ws://" + ROOT_URL;
     }
 
+    public static final boolean TEST_ACCOUNT_ALREADY_STORED = true;
+
     public static final boolean ENABLE_WAITING_BETWEEN_ACTIONS = true;
     public static final int WAITING_SECOND_BETWEEN_ACTIONS_MILLIS = 60000;
 
