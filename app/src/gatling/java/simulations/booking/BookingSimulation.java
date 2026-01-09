@@ -3,6 +3,7 @@ package simulations.booking;
 import io.gatling.javaapi.core.PopulationBuilder;
 import io.gatling.javaapi.core.Simulation;
 import io.gatling.javaapi.http.HttpProtocolBuilder;
+import simulations.booking.core.PlanLoader;
 import simulations.booking.core.SessionStore;
 import simulations.booking.scenario.*;
 import simulations.booking.subscription.*;
@@ -46,6 +47,10 @@ public class BookingSimulation extends Simulation {
         if (TEST_ACCOUNT_ALREADY_STORED) {
             SessionStore.loadStoredSessions();
         }
+
+        if (SCENARIO_MODE != ScenarioMode.DYNAMIC) {
+            PlanLoader.load();
+        }
     }
 
     private SubscriptionHandler createSubscriptionHandler() {
@@ -58,6 +63,7 @@ public class BookingSimulation extends Simulation {
     private ScenarioExecutor createScenarioExecutor() {
         return switch (SCENARIO_MODE) {
             case DYNAMIC -> new DynamicScenario();
+            case STATIC -> new StaticScenario();
         };
     }
 

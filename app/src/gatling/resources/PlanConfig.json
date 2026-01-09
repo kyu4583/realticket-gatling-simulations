@@ -1,0 +1,27 @@
+{
+  "config": {
+    "num_users": 500,
+    "seats_per_user": 2,
+    "seed": 0,
+    "snapshot_interval": 500,
+    "network_delay": 50,
+    "request_delay_mean": 2000,
+    "request_delay_min": 500,
+    "request_delay_skew": 1,
+    "no_collision": false
+  },
+  "sections": [
+    {
+      "col_len": 1,
+      "seats": [1,0,1,0]
+    },
+    {
+      "col_len": 1,
+      "seats": [1,0,1,0]
+    },
+    {
+      "col_len": 1,
+      "seats": [1,0,1,0]
+    }
+  ]
+}
