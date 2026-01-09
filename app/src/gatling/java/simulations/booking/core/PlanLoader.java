@@ -2,6 +2,7 @@ package simulations.booking.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import simulations.util.AsyncLogger;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -12,7 +13,7 @@ import static simulations.config.Config.TARGET_EVENT;
 /**
  * 계획 로더
  * 
- * 'resources/Plan.json'을 로드하고 Static 시나리오에 필요한 데이터를 관리한다.
+ * 'resources/Plan.json'을 로드하고 Static/Parallel 시나리오에 필요한 데이터를 관리한다.
  */
 public final class PlanLoader {
     
@@ -71,11 +72,14 @@ public final class PlanLoader {
 
     private static final Map<String, String> requestToCollision = new ConcurrentHashMap<>();
 
+    private static List<PlannedRequest> allRequestsSorted = null;
+    private static int[] requestUserIds = null;
+
     private static int numUsers = 0;
     private static int seatsPerUser = 0;
     private static int totalPlannedRequests = 0;
     private static boolean noCollisionMode = false;
-    
+
     private static boolean loaded = false;
     
     private PlanLoader() {}
@@ -217,6 +221,38 @@ public final class PlanLoader {
         System.out.println("  no_collision 모드: " + noCollisionMode);
         System.out.println("  총 계획된 요청: " + totalPlannedRequests);
     }
+    
+    /**
+     * Parallel 모드용 데이터 초기화 (시간순 정렬)
+     */
+    public static synchronized void initializeParallelData() {
+        if (allRequestsSorted != null) return;
+        
+        List<PlannedRequest> allReqs = new ArrayList<>();
+        List<Integer> userIds = new ArrayList<>();
+        
+        for (Map.Entry<Integer, List<PlannedRequest>> entry : userPlans.entrySet()) {
+            int userId = entry.getKey();
+            for (PlannedRequest req : entry.getValue()) {
+                allReqs.add(req);
+                userIds.add(userId);
+            }
+        }
+
+        Integer[] indices = new Integer[allReqs.size()];
+        for (int i = 0; i < indices.length; i++) indices[i] = i;
+
+        Arrays.sort(indices, (a, b) -> Long.compare(allReqs.get(a).timeMs, allReqs.get(b).timeMs));
+
+        allRequestsSorted = new ArrayList<>(allReqs.size());
+        requestUserIds = new int[allReqs.size()];
+        for (int i = 0; i < indices.length; i++) {
+            allRequestsSorted.add(allReqs.get(indices[i]));
+            requestUserIds[i] = userIds.get(indices[i]);
+        }
+
+        AsyncLogger.log("Parallel 데이터 초기화 완료: " + allRequestsSorted.size() + "개 (시간순 정렬)");
+    }
 
     // ========== Getter ==========
 
@@ -229,4 +265,7 @@ public final class PlanLoader {
     public static Map<String, CollisionGroup> getCollisionGroups() { return collisionGroups; }
     public static Map<String, String> getRequestToCollision() { return requestToCollision; }
     public static Map<String, ConcurrentLinkedQueue<PlannedRequest>> getLoserRequestQueues() { return loserRequestQueues; }
+    
+    public static List<PlannedRequest> getAllRequestsSorted() { return allRequestsSorted; }
+    public static int[] getRequestUserIds() { return requestUserIds; }
 }

@@ -64,6 +64,7 @@ public class BookingSimulation extends Simulation {
         return switch (SCENARIO_MODE) {
             case DYNAMIC -> new DynamicScenario();
             case STATIC -> new StaticScenario();
+            case PARALLEL -> new ParallelScenario();
         };
     }
 

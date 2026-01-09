@@ -11,7 +11,8 @@ public final class Config {
     // ========== 시나리오 모드 선택 ==========
     public enum ScenarioMode {
         DYNAMIC,   // 동적 좌석 선택 (실시간 seatStatus 기반)
-        STATIC,    // 정적 좌석 선택 (사전 계획된 요청)
+        STATIC,    // 정적 좌석 선택 (N 세션, 충돌 요청 가능, 타이밍 지연이 필연적)
+        PARALLEL   // 정적 좌석 선택 (N×M 세션, no-collision 모드 필수, 정확한 타이밍)
     }
     public static final ScenarioMode SCENARIO_MODE = ScenarioMode.DYNAMIC;
 
