@@ -279,23 +279,23 @@ class ReservationSimulator:
             }]
         valid_kinds = {"wait", "subscribe", "book_seats", "section_move", "confirm", "login"}
         out = []
-        for idx, r in enumerate(regions):
-            if "name" not in r:
+        for idx, region_def in enumerate(regions):
+            if "name" not in region_def:
                 raise ValueError(f"regions[{idx}]에 name 필드 없음")
-            if "duration_ms" not in r or not isinstance(r["duration_ms"], int) or r["duration_ms"] <= 0:
-                raise ValueError(f"regions[{idx}]의 duration_ms가 양의 정수가 아님: {r.get('duration_ms')}")
-            if "actions" not in r or not isinstance(r["actions"], list):
+            if "duration_ms" not in region_def or not isinstance(region_def["duration_ms"], int) or region_def["duration_ms"] <= 0:
+                raise ValueError(f"regions[{idx}]의 duration_ms가 양의 정수가 아님: {region_def.get('duration_ms')}")
+            if "actions" not in region_def or not isinstance(region_def["actions"], list):
                 raise ValueError(f"regions[{idx}]에 actions 배열 없음")
-            for a_idx, a in enumerate(r["actions"]):
+            for a_idx, a in enumerate(region_def["actions"]):
                 if not isinstance(a, dict) or "kind" not in a:
                     raise ValueError(f"regions[{idx}].actions[{a_idx}]에 kind 필드 없음")
                 if a["kind"] not in valid_kinds:
                     raise ValueError(
                         f"regions[{idx}].actions[{a_idx}]의 kind '{a['kind']}'이 표준 키워드 셋 외: {valid_kinds}"
                     )
-            if not re.match(r"^[a-z][a-z0-9_]*$", r["name"]):
-                raise ValueError(f"region 이름 '{r['name']}'은 ^[a-z][a-z0-9_]*$ 형식이어야 함")
-            out.append(dict(r))
+            if not re.match(r"^[a-z][a-z0-9_]*$", region_def["name"]):
+                raise ValueError(f"region 이름 '{region_def['name']}'은 ^[a-z][a-z0-9_]*$ 형식이어야 함")
+            out.append(dict(region_def))
         return out
 
     def _compute_region_windows(self, regions: list[dict]) -> list[dict]:
