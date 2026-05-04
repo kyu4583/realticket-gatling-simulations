@@ -599,6 +599,7 @@ class ReservationSimulator:
             "request_delay_min_ms": self.request_delay_min_ms,
             "request_delay_skew": self.request_delay_skew,
             "no_collision": self.no_collision,
+            "num_sections": self.section_count,
             "simulation_duration_ms": max((r["time_ms"] for r in final_requests), default=0),
             "users_completed": sum(1 for c in self.user_secured.values() if c >= self.seats_per_user)
         }
