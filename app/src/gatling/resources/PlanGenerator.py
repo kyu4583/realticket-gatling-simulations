@@ -600,6 +600,7 @@ class ReservationSimulator:
             "request_delay_skew": self.request_delay_skew,
             "no_collision": self.no_collision,
             "num_sections": self.section_count,
+            # simulation_duration_ms는 run()에서 self._sim_max_time_ms로 덮어씀 (section_move 포함 전체 duration)
             "simulation_duration_ms": max((r["time_ms"] for r in final_requests), default=0),
             "users_completed": sum(1 for c in self.user_secured.values() if c >= self.seats_per_user)
         }
