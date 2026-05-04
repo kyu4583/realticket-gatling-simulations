@@ -352,9 +352,11 @@ class ReservationSimulator:
             for user_id in range(1, self.num_users + 1):
                 current_section = 0
                 t = region_window["start_ms"] + self._section_move_delay()
+                if t >= region_window["end_ms"]:
+                    continue  # 초기 딜레이가 window를 초과 → 이 유저의 section_move는 수용 불가, 생략
                 for move_idx in range(count):
                     if t >= region_window["end_ms"]:
-                        t = region_window["end_ms"] - 1
+                        break
                     target = self._choose_target_section(current_section, user_id, move_idx)
                     self.section_move_counter += 1
                     req = Request(
