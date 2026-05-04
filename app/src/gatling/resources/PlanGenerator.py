@@ -556,7 +556,11 @@ class ReservationSimulator:
             else:
                 # 이전 요청도 collision_loser였으면 체인 따라가기
                 chain_req_id = prev_req_id
+                visited = set()
                 while chain_req_id in loser_chain:
+                    if chain_req_id in visited:
+                        break  # 사이클 방어 (이론상 발생 불가, 방어적 코드)
+                    visited.add(chain_req_id)
                     chain_prev = loser_chain[chain_req_id]
                     if chain_prev in request_to_collision:
                         loser_next_requests[req_id] = request_to_collision[chain_prev]
