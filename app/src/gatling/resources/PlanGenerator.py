@@ -32,15 +32,25 @@ class Request:
     section: int
     seat: int
     success: bool = False  # 시뮬레이션에서의 성공 여부
+    type: str = "book"                    # "book" | "section_move"  (GI-03)
+    region: str = "default"               # region 라벨 (GI-03)
+    target_section: Optional[int] = None  # section_move 전용
 
     def to_dict(self, user_override: Union[int, dict] = None) -> dict:
-        return {
+        d = {
             "id": self.id,
+            "type": self.type,
             "time_ms": self.time_ms,
             "user": user_override if user_override is not None else self.user,
-            "section": self.section,
-            "seat": self.seat
+            "region": self.region,
         }
+        if self.type == "book":
+            d["section"] = self.section
+            d["seat"] = self.seat
+        elif self.type == "section_move":
+            d["section"] = self.section
+            d["target_section"] = self.target_section
+        return d
 
 
 @dataclass
@@ -75,7 +85,13 @@ class ReservationSimulator:
             request_delay_mean_ms: int = 500,
             request_delay_min_ms: int = 50,
             request_delay_skew: float = 0.0,
-            no_collision: bool = False
+            no_collision: bool = False,
+            # === Phase 6 신규 (GI-01) ===
+            regions: Optional[list[dict]] = None,
+            section_move_delay_mean_ms: int = 1500,
+            section_move_delay_min_ms: int = 500,
+            section_move_delay_skew: float = 0.0,
+            section_move_target_strategy: str = "round_robin",
     ):
         if seed is not None:
             random.seed(seed)
@@ -120,6 +136,19 @@ class ReservationSimulator:
         self.requests: list[Request] = []
         self.request_counter = 0
         self.collision_counter = 0
+
+        # === Phase 6 인스턴스 변수 ===
+        self.section_move_delay_mean_ms = section_move_delay_mean_ms
+        self.section_move_delay_min_ms = section_move_delay_min_ms
+        self.section_move_delay_skew = section_move_delay_skew
+        self.section_move_target_strategy = section_move_target_strategy
+        self.section_count = len(sections)
+        self.section_move_counter = 0  # SM ID 카운터
+
+        # === Phase 6: regions 정규화 + window 계산 (Lock #4 단일 진실) ===
+        self._normalized_regions = self._normalize_regions(regions)
+        self._sim_max_time_ms = sum(r["duration_ms"] for r in self._normalized_regions)
+        self._region_windows = self._compute_region_windows(self._normalized_regions)
 
     def _assign_seats_to_users(self):
         """no_collision 모드: 좌석을 유저별로 미리 할당"""
@@ -235,67 +264,202 @@ class ReservationSimulator:
         if snapshot_time not in self.snapshots:
             self.snapshots[snapshot_time] = dict(self.seats)
 
-    def run(self) -> dict:
-        """시뮬레이션 실행"""
-        event_queue: list[Event] = []
+    # === Phase 6 신규 메서드 ===
 
-        # 초기 이벤트: 모든 유저가 request_delay 설정에 따라 시작
+    def _normalize_regions(self, regions: Optional[list[dict]]) -> list[dict]:
+        """regions 미정의/빈 배열 시 단일 default region 자동 생성 (D-04).
+        정의된 경우 6개 표준 키워드(D-03)와 region 이름 형식을 검증한다.
+        """
+        import re
+        if not regions:
+            return [{
+                "name": "default",
+                "duration_ms": 300000,  # 기존 max_time 5분과 동일 (하위 호환성)
+                "actions": [{"kind": "book_seats"}],
+            }]
+        valid_kinds = {"wait", "subscribe", "book_seats", "section_move", "confirm", "login"}
+        out = []
+        for idx, r in enumerate(regions):
+            if "name" not in r:
+                raise ValueError(f"regions[{idx}]에 name 필드 없음")
+            if "duration_ms" not in r or not isinstance(r["duration_ms"], int) or r["duration_ms"] <= 0:
+                raise ValueError(f"regions[{idx}]의 duration_ms가 양의 정수가 아님: {r.get('duration_ms')}")
+            if "actions" not in r or not isinstance(r["actions"], list):
+                raise ValueError(f"regions[{idx}]에 actions 배열 없음")
+            for a_idx, a in enumerate(r["actions"]):
+                if not isinstance(a, dict) or "kind" not in a:
+                    raise ValueError(f"regions[{idx}].actions[{a_idx}]에 kind 필드 없음")
+                if a["kind"] not in valid_kinds:
+                    raise ValueError(
+                        f"regions[{idx}].actions[{a_idx}]의 kind '{a['kind']}'이 표준 키워드 셋 외: {valid_kinds}"
+                    )
+            if not re.match(r"^[a-z][a-z0-9_]*$", r["name"]):
+                raise ValueError(f"region 이름 '{r['name']}'은 ^[a-z][a-z0-9_]*$ 형식이어야 함")
+            out.append(dict(r))
+        return out
+
+    def _compute_region_windows(self, regions: list[dict]) -> list[dict]:
+        """duration_ms 직렬 누적, start_ms·end_ms 계산 (GI-01)"""
+        cursor = 0
+        out = []
+        for r in regions:
+            out.append({
+                **r,
+                "start_ms": cursor,
+                "end_ms": cursor + r["duration_ms"],
+            })
+            cursor += r["duration_ms"]
+        return out
+
+    def _section_move_delay(self) -> int:
+        """section_move 간 딜레이 (_request_delay 패턴 복제)"""
+        min_d = self.section_move_delay_min_ms
+        mean_d = self.section_move_delay_mean_ms
+        skew = self.section_move_delay_skew
+        if skew <= 0:
+            delay = int(random.expovariate(1 / mean_d))
+            return max(min_d, delay)
+        else:
+            range_d = (mean_d - min_d) * 2
+            u = random.random()
+            delay = int(min_d + (u ** skew) * range_d)
+            return max(min_d, delay)
+
+    def _choose_target_section(self, current_section: int, user_id: int, move_idx: int) -> int:
+        """target_section 결정 (round_robin | random)"""
+        strategy = self.section_move_target_strategy
+        sc = self.section_count
+        if sc < 2:
+            raise ValueError(f"section_move를 위해서는 2개 이상의 섹션 필요 (현재 {sc})")
+        if strategy == "round_robin":
+            return (current_section + 1) % sc
+        elif strategy == "random":
+            candidates = [s for s in range(sc) if s != current_section]
+            return random.choice(candidates)
+        else:
+            raise ValueError(f"section_move_target_strategy='{strategy}' 미지원 (round_robin | random)")
+
+    def _generate_section_moves_for_region(self, region: dict, region_window: dict) -> list:
+        """region.actions 중 section_move kind에 대해 user당 count개 entry 생성"""
+        sm_actions = [a for a in region["actions"] if a["kind"] == "section_move"]
+        if not sm_actions:
+            return []
+        out: list[Request] = []
+        for a in sm_actions:
+            count = a.get("count", 0)
+            if count <= 0:
+                continue
+            for user_id in range(1, self.num_users + 1):
+                current_section = 0
+                t = region_window["start_ms"] + self._section_move_delay()
+                for move_idx in range(count):
+                    if t >= region_window["end_ms"]:
+                        t = region_window["end_ms"] - 1
+                    target = self._choose_target_section(current_section, user_id, move_idx)
+                    self.section_move_counter += 1
+                    req = Request(
+                        id=f"SM{self.section_move_counter}",
+                        time_ms=t,
+                        user=user_id,
+                        section=current_section,
+                        seat=-1,
+                        type="section_move",
+                        region=region["name"],
+                        target_section=target,
+                    )
+                    out.append(req)
+                    current_section = target
+                    t += self._section_move_delay()
+        return out
+
+    def _run_book_seats_in_region(self, region_window: dict):
+        """기존 event_queue 알고리즘을 region window 내부에서만 동작하도록 제한 (GI-01)"""
+        event_queue: list = []
+        region_start = region_window["start_ms"]
+        region_end = region_window["end_ms"]
+        region_name = region_window["name"]
+
         for user_id in range(1, self.num_users + 1):
-            start_time = self._request_delay()
-            heapq.heappush(event_queue, Event(start_time, user_id))
-
-        max_time = 300000  # 최대 시뮬레이션 시간 (5분)
+            if self.user_secured[user_id] >= self.seats_per_user:
+                continue
+            start_time = region_start + self._request_delay()
+            if start_time < region_end:
+                heapq.heappush(event_queue, Event(start_time, user_id))
 
         while event_queue:
             event = heapq.heappop(event_queue)
-
-            if event.time_ms > max_time:
+            if event.time_ms >= region_end:
                 break
-
             user_id = event.user_id
-
-            # 이미 완료된 유저면 스킵
             if self.user_secured[user_id] >= self.seats_per_user:
                 continue
-
-            # 스냅샷 갱신 (주기에 맞춰)
             self._update_snapshot(event.time_ms)
-
-            # 좌석 선택
             seat = self._choose_seat(user_id, event.time_ms)
             if seat is None:
-                # 스냅샷에 빈 좌석이 없으면 다음 스냅샷 갱신 후 재시도
                 next_snapshot = self._get_snapshot_time(event.time_ms) + self.snapshot_interval_ms
-                heapq.heappush(event_queue, Event(next_snapshot + random.randint(10, 100), user_id))
+                retry_time = next_snapshot + random.randint(10, 100)
+                if retry_time < region_end:
+                    heapq.heappush(event_queue, Event(retry_time, user_id))
                 continue
-
             section, seat_num = seat
-
-            # 요청 생성
             request = Request(
                 id=self._next_request_id(),
                 time_ms=event.time_ms,
                 user=user_id,
                 section=section,
-                seat=seat_num
+                seat=seat_num,
+                type="book",
+                region=region_name,           # GI-03: region 라벨 주입
             )
             self.requests.append(request)
-
-            # 좌석 점유 시도
             if self.seats[(section, seat_num)] is None:
-                # 성공: 좌석 점유
                 self.seats[(section, seat_num)] = event.time_ms
                 self.user_secured[user_id] += 1
-                self.successful_requests.add(request.id)  # 성공 기록
-            # else: 실패 (이미 점유됨) - 요청은 기록되지만 점유는 안 됨
-
-            # 다음 행동 예약 (아직 좌석이 필요하면)
+                self.successful_requests.add(request.id)
             if self.user_secured[user_id] < self.seats_per_user:
                 delay = self._request_delay()
-                heapq.heappush(event_queue, Event(event.time_ms + delay, user_id))
+                next_time = event.time_ms + delay
+                if next_time < region_end:
+                    heapq.heappush(event_queue, Event(next_time, user_id))
 
-        # 후처리 및 결과 생성
-        return self._process_results()
+    def run(self) -> dict:
+        """시뮬레이션 실행 (Phase 6: regions 통합 — Lock #4 단일 진실)"""
+        # 1. book_seats kind가 있는 region들에 대해 booking 실행
+        book_seats_regions = [w for w in self._region_windows
+                              if any(a["kind"] == "book_seats" for a in w["actions"])]
+        for region_window in book_seats_regions:
+            self._run_book_seats_in_region(region_window)
+
+        # 2. section_move entry 생성 (모든 region 순회)
+        section_move_requests: list[Request] = []
+        for region_window in self._region_windows:
+            section_move_requests.extend(
+                self._generate_section_moves_for_region(region_window, region_window)
+            )
+
+        # 3. _process_results 호출 (booking 결과만 충돌 처리 — 내부 수정 X: Pitfall 1)
+        result = self._process_results()
+
+        # 4. section_move entry를 결과 requests에 시간순 머지
+        sm_dicts = [r.to_dict() for r in section_move_requests]
+        result["requests"].extend(sm_dicts)
+        result["requests"].sort(key=lambda r: (r["time_ms"], r["id"]))
+
+        # 5. stats에 regions 메타 부착 (GI-02)
+        result["stats"]["regions"] = [
+            {
+                "name": w["name"],
+                "duration_ms": w["duration_ms"],
+                "start_ms": w["start_ms"],
+                "end_ms": w["end_ms"],
+                "actions": w["actions"],
+            }
+            for w in self._region_windows
+        ]
+        # simulation_duration_ms를 regions 합으로 갱신 (Pitfall 3 회피)
+        result["stats"]["simulation_duration_ms"] = self._sim_max_time_ms
+
+        return result
 
     def _process_results(self) -> dict:
         """
@@ -307,10 +471,11 @@ class ReservationSimulator:
         - 시도 중 실패 후 재시도 = collision_loser 요청
         - 충돌 그룹은 일반 요청만으로 구성 (collision_loser 요청은 제외)
         """
-        # 1. 유저별 요청을 시간순 정렬
+        # 1. 유저별 요청을 시간순 정렬 (book type만)
         user_requests: dict[int, list[Request]] = defaultdict(list)
         for req in self.requests:
-            user_requests[req.user].append(req)
+            if req.type == "book":
+                user_requests[req.user].append(req)
 
         for user_id in user_requests:
             user_requests[user_id].sort(key=lambda r: (r.time_ms, r.id))
@@ -340,12 +505,13 @@ class ReservationSimulator:
                     # 성공 → 현재 시도 완료, 다음 시도 시작
                     attempt_start = True
 
-        # 3. 충돌 그룹 생성 (모든 요청 대상)
+        # 3. 충돌 그룹 생성 (book type 요청 대상)
         # 같은 좌석에 2개 이상 요청이 있으면 충돌 그룹
         seat_requests: dict[tuple[int, int], list[Request]] = defaultdict(list)
         for req in self.requests:
-            key = (req.section, req.seat)
-            seat_requests[key].append(req)
+            if req.type == "book":
+                key = (req.section, req.seat)
+                seat_requests[key].append(req)
 
         collision_groups: list[CollisionGroup] = []
         request_to_collision: dict[str, str] = {}
@@ -393,9 +559,11 @@ class ReservationSimulator:
                         break
                     chain_req_id = chain_prev
 
-        # 5. 최종 요청 목록 생성
+        # 5. 최종 요청 목록 생성 (book type만 — section_move는 run()에서 외부 머지)
         final_requests = []
         for req in self.requests:
+            if req.type != "book":
+                continue
             if req.id in loser_next_requests:
                 user_field = {"collision_loser": loser_next_requests[req.id]}
             else:
@@ -404,14 +572,14 @@ class ReservationSimulator:
 
         final_requests.sort(key=lambda r: (r["time_ms"], r["id"]))
 
-        # 5. 통계 계산
+        # 6. 통계 계산
         collision_request_count = sum(len(cg.request_ids) for cg in collision_groups)
         loser_request_count = len(loser_next_requests)
 
-        # 검증: 각 유저의 일반 요청 수
+        # 검증: 각 유저의 일반 요청 수 (book type만)
         user_normal_count = defaultdict(int)
         for req in final_requests:
-            if isinstance(req["user"], int):
+            if req.get("type", "book") == "book" and isinstance(req["user"], int):
                 user_normal_count[req["user"]] += 1
 
         stats = {
@@ -476,22 +644,66 @@ def validate_plan(plan: dict) -> list[str]:
                 if loser_cg == cg["id"]:
                     errors.append(f"요청 {req_id}가 자신이 속한 충돌 그룹 {cg['id']}를 참조함")
 
-    # 5. 각 유저의 일반 요청 수 = seats_per_user 확인
+    # 5. 각 유저의 일반 요청 수 = seats_per_user 확인 (book type만 카운트, section_move 제외)
     user_normal_count = defaultdict(int)
     for req in plan["requests"]:
-        if isinstance(req["user"], int):
+        if req.get("type", "book") == "book" and isinstance(req["user"], int):
             user_normal_count[req["user"]] += 1
 
     wrong_users = [u for u, c in user_normal_count.items() if c != stats["seats_per_user"]]
     if wrong_users:
         errors.append(f"일반 요청 수가 {stats['seats_per_user']}가 아닌 유저: {len(wrong_users)}명")
 
+    # ===== Phase 6 신규 규칙 (6-11) =====
+
+    # 규칙 6: 모든 request entry에 region 라벨 존재
+    for req in plan["requests"]:
+        if "region" not in req:
+            errors.append(f"요청 {req['id']}에 region 라벨 없음")
+
+    # 규칙 7: region 이름이 stats.regions 집합 안
+    valid_regions = {r["name"] for r in stats.get("regions", [])} | {"default"}
+    for req in plan["requests"]:
+        rname = req.get("region")
+        if rname is not None and rname not in valid_regions:
+            errors.append(f"요청 {req['id']}의 region '{rname}'이 정의되지 않음")
+
+    # 규칙 8: section_move target_section 범위 검증
+    book_sections = [r.get("section") for r in plan["requests"]
+                     if r.get("type", "book") == "book" and isinstance(r.get("section"), int) and r.get("section") >= 0]
+    section_count_estimate = max(book_sections) + 1 if book_sections else stats.get("num_sections", 0)
+    for req in plan["requests"]:
+        if req.get("type") == "section_move":
+            ts = req.get("target_section")
+            if ts is None or ts < 0 or (section_count_estimate > 0 and ts >= section_count_estimate):
+                errors.append(f"section_move {req['id']}의 target_section={ts}이 범위 밖")
+            elif ts == req.get("section"):
+                errors.append(f"section_move {req['id']}의 target_section이 현재 section과 동일")
+
+    # 규칙 9-10: time_ms가 region window 안
+    region_windows_map = {r["name"]: (r["start_ms"], r["end_ms"]) for r in stats.get("regions", [])}
+    region_windows_map.setdefault("default", (0, stats.get("simulation_duration_ms", 300000)))
+    for req in plan["requests"]:
+        rname = req.get("region", "default")
+        if rname in region_windows_map:
+            start, end = region_windows_map[rname]
+            if not (start <= req["time_ms"] < end):
+                errors.append(f"{req.get('type','book')} {req['id']} time_ms={req['time_ms']} 가 region '{rname}'의 [{start},{end}) 밖")
+
+    # 규칙 11: region duration 합 >= simulation_duration_ms
+    regions_list = stats.get("regions", [])
+    if regions_list:
+        total_duration = sum(r.get("duration_ms", 0) for r in regions_list)
+        sim_dur = stats.get("simulation_duration_ms", 0)
+        if total_duration < sim_dur:
+            errors.append(f"region 총 duration {total_duration}ms < 시뮬레이션 duration {sim_dur}ms")
+
     return errors
 
 
 def load_config(config_path: str) -> dict:
     """설정 파일 로드"""
-    with open(config_path, "r") as f:
+    with open(config_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     if isinstance(data, dict) and "sections" in data:
@@ -512,6 +724,80 @@ def find_default_config() -> Optional[str]:
     return None
 
 
+def _run_selftest(case_filter=None):
+    """GI-01/02/03 핵심 3 selftest 케이스 (regions_default, regions_serial, region_label_on_requests)"""
+    import sys
+    sections_small = [{"col_len": 10, "seats": [1] * 30} for _ in range(3)]
+    all_cases = []
+
+    def case(name):
+        def deco(fn):
+            all_cases.append((name, fn))
+            return fn
+        return deco
+
+    @case("regions_default")
+    def _regions_default():
+        sim = ReservationSimulator(sections=sections_small, num_users=5, seats_per_user=2,
+                                   seed=42, no_collision=True)
+        plan = sim.run()
+        errs = []
+        if plan["stats"]["regions"][0]["name"] != "default":
+            errs.append(f"regions[0].name={plan['stats']['regions'][0]['name']} != 'default'")
+        if not all(r.get("region") == "default" for r in plan["requests"]):
+            errs.append("일부 request의 region이 'default'가 아님")
+        errs.extend(validate_plan(plan))
+        return errs
+
+    @case("regions_serial")
+    def _regions_serial():
+        regions = [
+            {"name": "a", "duration_ms": 10000, "actions": [{"kind": "subscribe"}]},
+            {"name": "b", "duration_ms": 20000, "actions": [{"kind": "book_seats"}]}
+        ]
+        sim = ReservationSimulator(sections=sections_small, num_users=3, seats_per_user=2,
+                                   seed=42, no_collision=True, regions=regions)
+        plan = sim.run()
+        rs = plan["stats"]["regions"]
+        errs = []
+        if rs[0]["start_ms"] != 0 or rs[0]["end_ms"] != 10000:
+            errs.append(f"regions[0] window 오류: start={rs[0]['start_ms']}, end={rs[0]['end_ms']}")
+        if rs[1]["start_ms"] != 10000 or rs[1]["end_ms"] != 30000:
+            errs.append(f"regions[1] window 오류: start={rs[1]['start_ms']}, end={rs[1]['end_ms']}")
+        errs.extend(validate_plan(plan))
+        return errs
+
+    @case("region_label_on_requests")
+    def _region_label():
+        sim = ReservationSimulator(sections=sections_small, num_users=3, seats_per_user=2,
+                                   seed=42, no_collision=True)
+        plan = sim.run()
+        errs = []
+        if not all("region" in r for r in plan["requests"]):
+            errs.append("일부 request에 region 필드 없음")
+        return errs
+
+    cases_to_run = [(n, fn) for n, fn in all_cases if (case_filter is None or case_filter == n)]
+    if not cases_to_run:
+        print(f"FAIL: --case '{case_filter}' 매칭 케이스 없음", file=sys.stderr)
+        return False
+    all_pass = True
+    for name, fn in cases_to_run:
+        try:
+            errs = fn()
+            if errs:
+                print(f"FAIL [{name}]: {errs[:3]}", file=sys.stderr)
+                all_pass = False
+            else:
+                print(f"PASS [{name}]", file=sys.stderr)
+        except Exception as e:
+            import traceback
+            print(f"FAIL [{name}]: 예외 {type(e).__name__}: {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            all_pass = False
+    return all_pass
+
+
 def main():
     import argparse
     import sys
@@ -528,6 +814,8 @@ def main():
   python3 planner.py --request-delay-mean 300 # 요청 간 평균 딜레이 조정
   python3 planner.py --request-delay-skew 1   # 균등 분포 딜레이
   python3 planner.py --no-collision           # 충돌 없는 계획 생성
+  python3 planner.py --selftest               # 전체 selftest 실행
+  python3 planner.py --selftest --case regions_default  # 특정 케이스
 
 request_delay_skew 값에 따른 분포:
   0 (기본): 지수 분포 (짧은 딜레이가 많고 긴 딜레이가 드묾)
@@ -554,8 +842,23 @@ request_delay_skew 값에 따른 분포:
                         help="충돌 없는 계획 생성 (좌석을 유저별로 미리 할당)")
     parser.add_argument("--output", "-o", type=str, help="출력 파일")
     parser.add_argument("--validate", action="store_true", help="결과 검증")
+    # === Phase 6 신규 CLI 옵션 ===
+    parser.add_argument("--section-move-delay-mean", type=int, default=None)
+    parser.add_argument("--section-move-delay-min", type=int, default=None)
+    parser.add_argument("--section-move-delay-skew", type=float, default=None)
+    parser.add_argument("--section-move-target-strategy", type=str, default=None,
+                        choices=["round_robin", "random"])
+    parser.add_argument("--regions", type=str, default=None,
+                        help="regions 정의 JSON 문자열")
+    parser.add_argument("--selftest", action="store_true")
+    parser.add_argument("--case", type=str, default=None)
 
     args = parser.parse_args()
+
+    # --selftest 분기 (args 파싱 직후, sections 로딩 전)
+    if args.selftest:
+        success = _run_selftest(case_filter=args.case)
+        sys.exit(0 if success else 1)
 
     # 기본값
     config = {
@@ -567,9 +870,15 @@ request_delay_skew 값에 따른 분포:
         "request_delay_mean": 500,
         "request_delay_min": 50,
         "request_delay_skew": 0.0,
-        "no_collision": False
+        "no_collision": False,
+        # Phase 6 신규
+        "section_move_delay_mean_ms": 1500,
+        "section_move_delay_min_ms": 500,
+        "section_move_delay_skew": 0.0,
+        "section_move_target_strategy": "round_robin",
     }
     sections = None
+    regions = None  # Phase 6: PlanConfig.regions 최상위 키
 
     # 설정 파일 로드
     config_path = args.config or find_default_config()
@@ -577,8 +886,14 @@ request_delay_skew 값에 따른 분포:
         print(f"설정 파일: {config_path}", file=sys.stderr)
         loaded = load_config(config_path)
         sections = loaded.get("sections")
+        regions = loaded.get("regions")  # Phase 6: 최상위 regions 키
         if "config" in loaded:
             config.update(loaded["config"])
+            # config 블록의 4필드도 override
+            for key in ("section_move_delay_mean_ms", "section_move_delay_min_ms",
+                        "section_move_delay_skew", "section_move_target_strategy"):
+                if key in loaded.get("config", {}):
+                    config[key] = loaded["config"][key]
 
     # CLI 파라미터로 덮어쓰기
     if args.users is not None:
@@ -599,6 +914,17 @@ request_delay_skew 값에 따른 분포:
         config["request_delay_skew"] = args.request_delay_skew
     if args.no_collision:
         config["no_collision"] = True
+    # Phase 6 CLI override
+    if args.section_move_delay_mean is not None:
+        config["section_move_delay_mean_ms"] = args.section_move_delay_mean
+    if args.section_move_delay_min is not None:
+        config["section_move_delay_min_ms"] = args.section_move_delay_min
+    if args.section_move_delay_skew is not None:
+        config["section_move_delay_skew"] = args.section_move_delay_skew
+    if args.section_move_target_strategy is not None:
+        config["section_move_target_strategy"] = args.section_move_target_strategy
+    if args.regions is not None:
+        regions = json.loads(args.regions)
 
     if sections is None:
         print("오류: 좌석 데이터가 없습니다.", file=sys.stderr)
@@ -625,7 +951,13 @@ request_delay_skew 값에 따른 분포:
         request_delay_mean_ms=config["request_delay_mean"],
         request_delay_min_ms=config["request_delay_min"],
         request_delay_skew=config["request_delay_skew"],
-        no_collision=config["no_collision"]
+        no_collision=config["no_collision"],
+        # Phase 6 신규
+        regions=regions,
+        section_move_delay_mean_ms=config["section_move_delay_mean_ms"],
+        section_move_delay_min_ms=config["section_move_delay_min_ms"],
+        section_move_delay_skew=config["section_move_delay_skew"],
+        section_move_target_strategy=config["section_move_target_strategy"],
     )
 
     plan = simulator.run()
@@ -646,7 +978,7 @@ request_delay_skew 값에 따른 분포:
         os.path.dirname(os.path.abspath(__file__)), "Plan.json"
     )
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(plan, f, indent=2, ensure_ascii=False)
 
     print(f"\n=== 결과 ===", file=sys.stderr)

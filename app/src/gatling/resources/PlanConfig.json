@@ -8,8 +8,15 @@
     "request_delay_mean": 2000,
     "request_delay_min": 500,
     "request_delay_skew": 1,
-    "no_collision": false
+    "no_collision": false,
+    "section_move_delay_mean_ms": 1500,
+    "section_move_delay_min_ms": 500,
+    "section_move_delay_skew": 0,
+    "section_move_target_strategy": "round_robin"
   },
+  "regions": [
+    { "name": "default", "duration_ms": 300000, "actions": [{ "kind": "book_seats" }] }
+  ],
   "sections": [
     {
       "col_len": 1,
