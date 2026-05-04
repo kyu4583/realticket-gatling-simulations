@@ -339,9 +339,11 @@ class ReservationSimulator:
         else:
             raise ValueError(f"section_move_target_strategy='{strategy}' 미지원 (round_robin | random)")
 
-    def _generate_section_moves_for_region(self, region: dict, region_window: dict) -> list:
-        """region.actions 중 section_move kind에 대해 user당 count개 entry 생성"""
-        sm_actions = [a for a in region["actions"] if a["kind"] == "section_move"]
+    def _generate_section_moves_for_region(self, region_window: dict) -> list:
+        """region.actions 중 section_move kind에 대해 user당 count개 entry 생성.
+        region_window는 _compute_region_windows()가 반환한 dict (actions/name/start_ms/end_ms 포함).
+        """
+        sm_actions = [a for a in region_window["actions"] if a["kind"] == "section_move"]
         if not sm_actions:
             return []
         out: list[Request] = []
@@ -366,7 +368,7 @@ class ReservationSimulator:
                         section=current_section,
                         seat=-1,
                         type="section_move",
-                        region=region["name"],
+                        region=region_window["name"],
                         target_section=target,
                     )
                     out.append(req)
@@ -436,7 +438,7 @@ class ReservationSimulator:
         section_move_requests: list[Request] = []
         for region_window in self._region_windows:
             section_move_requests.extend(
-                self._generate_section_moves_for_region(region_window, region_window)
+                self._generate_section_moves_for_region(region_window)
             )
 
         # 3. _process_results 호출 (booking 결과만 충돌 처리 — 내부 수정 X: Pitfall 1)
