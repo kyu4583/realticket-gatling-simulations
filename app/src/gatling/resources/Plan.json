@@ -1,0 +1,141 @@
+{
+  "stats": {
+    "num_users": 10,
+    "seats_per_user": 1,
+    "total_seats": 10,
+    "total_available_seats": 50,
+    "total_requests": 10,
+    "collision_groups": 0,
+    "collision_requests": 0,
+    "conditional_requests": 0,
+    "snapshot_interval_ms": 500,
+    "network_delay_ms": 50,
+    "request_delay_mean_ms": 1000,
+    "request_delay_min_ms": 100,
+    "request_delay_skew": 1,
+    "no_collision": true,
+    "num_sections": 1,
+    "simulation_duration_ms": 60000,
+    "users_completed": 10,
+    "regions": [
+      {
+        "name": "lobby_traffic",
+        "duration_ms": 30000,
+        "start_ms": 0,
+        "end_ms": 30000,
+        "actions": [
+          {
+            "kind": "login"
+          },
+          {
+            "kind": "subscribe"
+          }
+        ]
+      },
+      {
+        "name": "booking_burst",
+        "duration_ms": 30000,
+        "start_ms": 30000,
+        "end_ms": 60000,
+        "actions": [
+          {
+            "kind": "book_seats"
+          }
+        ]
+      }
+    ]
+  },
+  "requests": [
+    {
+      "id": "R1",
+      "type": "book",
+      "time_ms": 30122,
+      "user": 5,
+      "region": "booking_burst",
+      "section": 0,
+      "seat": 13
+    },
+    {
+      "id": "R2",
+      "type": "book",
+      "time_ms": 30189,
+      "user": 8,
+      "region": "booking_burst",
+      "section": 0,
+      "seat": 26
+    },
+    {
+      "id": "R3",
+      "type": "book",
+      "time_ms": 30408,
+      "user": 4,
+      "region": "booking_burst",
+      "section": 0,
+      "seat": 1
+    },
+    {
+      "id": "R4",
+      "type": "book",
+      "time_ms": 30563,
+      "user": 7,
+      "region": "booking_burst",
+      "section": 0,
+      "seat": 9
+    },
+    {
+      "id": "R5",
+      "type": "book",
+      "time_ms": 30774,
+      "user": 2,
+      "region": "booking_burst",
+      "section": 0,
+      "seat": 39
+    },
+    {
+      "id": "R6",
+      "type": "book",
+      "time_ms": 30856,
+      "user": 1,
+      "region": "booking_burst",
+      "section": 0,
+      "seat": 11
+    },
+    {
+      "id": "R7",
+      "type": "book",
+      "time_ms": 30903,
+      "user": 9,
+      "region": "booking_burst",
+      "section": 0,
+      "seat": 3
+    },
+    {
+      "id": "R8",
+      "type": "book",
+      "time_ms": 31318,
+      "user": 6,
+      "region": "booking_burst",
+      "section": 0,
+      "seat": 31
+    },
+    {
+      "id": "R9",
+      "type": "book",
+      "time_ms": 31373,
+      "user": 3,
+      "region": "booking_burst",
+      "section": 0,
+      "seat": 12
+    },
+    {
+      "id": "R10",
+      "type": "book",
+      "time_ms": 31631,
+      "user": 10,
+      "region": "booking_burst",
+      "section": 0,
+      "seat": 7
+    }
+  ],
+  "collision_groups": []
+}
