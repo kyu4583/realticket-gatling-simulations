@@ -519,7 +519,7 @@ class ReservationSimulator:
         for (section, seat), reqs in seat_requests.items():
             if len(reqs) > 1:
                 # 충돌 발생: 시간순 정렬 (동시면 랜덤)
-                reqs_sorted = sorted(reqs, key=lambda r: (r.time_ms, random.random()))
+                reqs_sorted = sorted(reqs, key=lambda r: (r.time_ms, r.id))
 
                 # 승자 = 첫 번째 성공한 요청
                 winner = next((r for r in reqs_sorted if r.id in self.successful_requests), reqs_sorted[0])
