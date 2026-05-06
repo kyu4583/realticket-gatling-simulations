@@ -1,6 +1,7 @@
 package simulations.booking.subscription;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.gatling.javaapi.core.ActionBuilder;
 import io.gatling.javaapi.http.HttpProtocolBuilder;
 
@@ -8,19 +9,19 @@ public interface SubscriptionHandler {
 
     HttpProtocolBuilder configureProtocol(HttpProtocolBuilder baseProtocol);
 
-    ActionBuilder subscribeAndInitSeatStatus(int targetEvent);
+    ActionBuilder subscribe(int targetEvent);
 
     ActionBuilder reloadSeatStatus();
 
     ActionBuilder close();
 
-    default int[][] parseSeatStatus(JsonNode seatStatusJson) {
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+    default int[] parseSeatStatus(JsonNode seatStatusJson) {
+        ObjectMapper mapper = new ObjectMapper();
         try {
-            return mapper.treeToValue(seatStatusJson, int[][].class);
+            return mapper.treeToValue(seatStatusJson, int[].class);
         } catch (Exception e) {
-            System.err.println("좌석 상태 파싱 오류: " + e.getMessage());
-            return new int[0][0];
+            System.err.println("seatStatus parse error: " + e.getMessage());
+            return new int[0];
         }
     }
 }

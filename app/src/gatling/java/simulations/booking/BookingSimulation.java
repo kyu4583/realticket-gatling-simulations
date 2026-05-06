@@ -5,19 +5,18 @@ import io.gatling.javaapi.core.Simulation;
 import io.gatling.javaapi.http.HttpProtocolBuilder;
 import simulations.booking.core.PlanLoader;
 import simulations.booking.core.SessionStore;
-import simulations.booking.scenario.*;
-import simulations.booking.subscription.*;
+import simulations.booking.scenario.DynamicScenario;
+import simulations.booking.scenario.ParallelScenario;
+import simulations.booking.scenario.ScenarioExecutor;
+import simulations.booking.scenario.StaticScenario;
+import simulations.booking.subscription.SseHandler;
+import simulations.booking.subscription.SubscriptionHandler;
+import simulations.booking.subscription.WsHandler;
 
 import static io.gatling.javaapi.http.HttpDsl.http;
 import static simulations.config.Config.*;
 import static simulations.config.Config.Url.ROOT_URL_HTTP;
 
-/**
- * 사용법:
- *   ./gradlew gatlingRun-simulations.booking.BookingSimulation
- * 설정:
- *   Config.java에서 SUBSCRIPTION_TYPE과 SCENARIO_MODE 등 동작 설정
- */
 public class BookingSimulation extends Simulation {
 
     private final SubscriptionHandler subscription = createSubscriptionHandler();
@@ -69,17 +68,16 @@ public class BookingSimulation extends Simulation {
     }
 
     private void printConfiguration() {
-        System.out.println("╔════════════════════════════════════════════════╗");
-        System.out.println("║           Booking Simulation                   ║");
-        System.out.println("╠════════════════════════════════════════════════╣");
-        System.out.println("║  구독 방식: " + padRight(SUBSCRIPTION_TYPE.name(), 34) + "║");
-        System.out.println("║  시나리오:  " + padRight(SCENARIO_MODE.name(), 34) + "║");
-        System.out.println("║  대상 이벤트: " + padRight(String.valueOf(TARGET_EVENT), 32) + "║");
-        System.out.println("║  사전 로그인: " + padRight(String.valueOf(TEST_ACCOUNT_ALREADY_STORED), 32) + "║");
-        System.out.println("╚════════════════════════════════════════════════╝");
-    }
-
-    private String padRight(String s, int n) {
-        return String.format("%-" + n + "s", s);
+        System.out.println("==================================================");
+        System.out.println("예매 시뮬레이션");
+        System.out.println("==================================================");
+        System.out.println("구독 방식: " + SUBSCRIPTION_TYPE.name());
+        System.out.println("시나리오: " + SCENARIO_MODE.name());
+        System.out.println("대상 이벤트: " + TARGET_EVENT);
+        System.out.println("사전 로그인: " + TEST_ACCOUNT_ALREADY_STORED);
+        if (SCENARIO_MODE == ScenarioMode.DYNAMIC) {
+            System.out.println("동적 섹션 수: " + DYNAMIC_SECTION_COUNT);
+        }
+        System.out.println("==================================================");
     }
 }

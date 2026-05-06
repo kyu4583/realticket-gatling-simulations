@@ -3,12 +3,13 @@ package simulations.booking.scenario;
 import io.gatling.javaapi.core.ChainBuilder;
 import io.gatling.javaapi.core.PopulationBuilder;
 import io.gatling.javaapi.core.ScenarioBuilder;
-import simulations.util.AsyncLogger;
 import simulations.booking.core.BookingActions;
 import simulations.booking.core.PlanLoader;
 import simulations.booking.core.PlanLoader.PlannedRequest;
+import simulations.booking.core.PlanLoader.RequestType;
 import simulations.booking.core.SessionStore;
 import simulations.booking.subscription.SubscriptionHandler;
+import simulations.util.AsyncLogger;
 
 import java.time.Duration;
 import java.util.List;
@@ -19,15 +20,6 @@ import static io.gatling.javaapi.core.CoreDsl.*;
 import static io.gatling.javaapi.http.HttpDsl.*;
 import static simulations.config.Config.*;
 
-/**
- * Parallel 시나리오
- *
- * no_collision 모드에서 정확한 타이밍으로 요청을 보내기 위한 시나리오.
- *
- * 구조:
- * - Setup 세션 (N개): 로그인, 권한 확인, SSE 구독 유지
- * - Request 세션 (N×M개): 각각 단일 요청만 담당, 정확한 타이밍에 실행
- */
 public class ParallelScenario implements ScenarioExecutor {
 
     private static final AtomicInteger setupCompletedCount = new AtomicInteger(0);
@@ -42,7 +34,7 @@ public class ParallelScenario implements ScenarioExecutor {
         PlanLoader.load();
 
         if (!PlanLoader.isNoCollisionMode()) {
-            System.out.println("⚠️ 경고: no_collision 모드가 아닙니다. Static 시나리오를 권장합니다.");
+            System.out.println("경고: 병렬 모드는 no_collision 계획에 맞춰져 있습니다.");
         }
 
         PlanLoader.initializeParallelData();
@@ -50,7 +42,7 @@ public class ParallelScenario implements ScenarioExecutor {
         int numUsers = PlanLoader.getNumUsers();
         int totalRequests = PlanLoader.getTotalPlannedRequests();
 
-        return new PopulationBuilder[] {
+        return new PopulationBuilder[]{
                 setupUsersScenario(subscription, numUsers, totalRequests)
                         .injectOpen(atOnceUsers(numUsers)),
                 parallelRequestScenario(numUsers, totalRequests)
@@ -63,18 +55,17 @@ public class ParallelScenario implements ScenarioExecutor {
         int numUsers = PlanLoader.getNumUsers();
         int totalRequests = PlanLoader.getTotalPlannedRequests();
 
-        System.out.println("=== Parallel 시나리오 ===");
-        System.out.println("  Setup 세션: " + numUsers + "개");
-        System.out.println("  Request 세션: " + totalRequests + "개");
-        System.out.println("  총 세션: " + (numUsers + totalRequests) + "개");
+        System.out.println("=== 병렬 시나리오 ===");
+        System.out.println("  준비 세션: " + numUsers);
+        System.out.println("  요청 세션: " + totalRequests);
+        System.out.println("  전체 세션: " + (numUsers + totalRequests));
         System.out.println("  유저당 좌석: " + PlanLoader.getSeatsPerUser());
         System.out.println("  no_collision 모드: " + PlanLoader.isNoCollisionMode());
+        System.out.println("  섹션 전환 요청: " + PlanLoader.getTotalSectionMoveRequests());
     }
 
-    // ========== Setup 시나리오 ==========
-
     private ScenarioBuilder setupUsersScenario(SubscriptionHandler subscription, int numUsers, int totalRequests) {
-        return scenario("Setup Users")
+        return scenario("유저 준비")
                 .exec(loginAndStoreSession(numUsers))
                 .exec(prepareAndSubscribe(subscription, numUsers))
                 .exec(waitForRequestsCompletion(totalRequests))
@@ -93,14 +84,14 @@ public class ParallelScenario implements ScenarioExecutor {
 
                         if (sessionId != null && !sessionId.isEmpty()) {
                             SessionStore.setSharedSession(userNum, sessionId);
-                            AsyncLogger.logf("Setup 유저 %d: 세션 저장 완료", userNum);
+                            AsyncLogger.logf("유저 준비 %d: 세션 저장 완료", userNum);
                         } else {
-                            AsyncLogger.logf("⚠️ Setup 유저 %d: 세션 없음!", userNum);
+                            AsyncLogger.logf("유저 준비 %d: 세션 없음", userNum);
                         }
                     }
 
                     int completed = setupCompletedCount.incrementAndGet();
-                    AsyncLogger.logf("Setup 진행: %d/%d", completed, numUsers);
+                    AsyncLogger.logf("유저 준비 진행: %d/%d", completed, numUsers);
                     return session;
                 })
                 .exec(BookingActions.waitAfterStaggeredLogin());
@@ -113,7 +104,7 @@ public class ParallelScenario implements ScenarioExecutor {
                 .exec(BookingActions.subscribeSeats(subscription))
                 .exec(session -> {
                     int completed = subscribeCompletedCount.incrementAndGet();
-                    AsyncLogger.logf("구독 완료: %d/%d", completed, numUsers);
+                    AsyncLogger.logf("구독 준비 완료: %d/%d", completed, numUsers);
                     return session;
                 });
     }
@@ -122,18 +113,16 @@ public class ParallelScenario implements ScenarioExecutor {
         return asLongAs(session -> requestCompletedCount.get() < totalRequests)
                 .on(pause(Duration.ofMillis(500)))
                 .exec(session -> {
-                    AsyncLogger.logf("Setup 유저 %d: 종료", session.getInt("userNum"));
+                    AsyncLogger.logf("유저 준비 %d: 종료", session.getInt("userNum"));
                     return session;
                 });
     }
 
-    // ========== Request 시나리오 ==========
-
     private ScenarioBuilder parallelRequestScenario(int numUsers, int totalRequests) {
-        return scenario("Parallel Requests")
+        return scenario("병렬 요청")
                 .exec(waitForSubscriptions(numUsers))
                 .exec(BookingActions.waitAfterSubscribe())
-                .exec(assignRequestToSession(totalRequests))
+                .exec(assignRequestToSession())
                 .doIf(session -> session.getBoolean("hasRequest")).then(
                         exec(executeTimedRequest(totalRequests))
                 );
@@ -144,14 +133,14 @@ public class ParallelScenario implements ScenarioExecutor {
                 .on(pause(Duration.ofMillis(100)));
     }
 
-    private ChainBuilder assignRequestToSession(int totalRequests) {
+    private ChainBuilder assignRequestToSession() {
         List<PlannedRequest> allRequests = PlanLoader.getAllRequestsSorted();
         int[] userIds = PlanLoader.getRequestUserIds();
 
         return exec(session -> {
             int idx = requestFeederIndex.getAndIncrement();
             if (idx >= allRequests.size()) {
-                AsyncLogger.logf("⚠️ 요청 인덱스 초과: %d", idx);
+                AsyncLogger.logf("요청 인덱스 초과: %d", idx);
                 return session.set("hasRequest", false);
             }
 
@@ -160,7 +149,7 @@ public class ParallelScenario implements ScenarioExecutor {
             String sessionId = SessionStore.getSharedSession(userId);
 
             if (sessionId == null || sessionId.isEmpty()) {
-                AsyncLogger.logf("⚠️ Request [%s]: User%d 세션 없음!", req.id, userId);
+                AsyncLogger.logf("요청 [%s]: User%d 저장 세션 없음", req.id, userId);
                 sessionId = "";
             }
 
@@ -168,8 +157,10 @@ public class ParallelScenario implements ScenarioExecutor {
                     .set("hasRequest", true)
                     .set("reqUserId", userId)
                     .set("reqId", req.id)
+                    .set("reqType", req.type.name())
                     .set("reqTimeMs", req.timeMs)
                     .set("reqSection", req.section)
+                    .set("reqTargetSection", req.targetSection)
                     .set("reqSeat", req.seat)
                     .set("reqBody", req.requestBody)
                     .set("sessionId", sessionId);
@@ -181,7 +172,7 @@ public class ParallelScenario implements ScenarioExecutor {
                 .exec(synchronizeRequests(totalRequests))
                 .exec(waitUntilScheduledTime())
                 .exec(logRequestStart())
-                .exec(sendBookingRequest())
+                .exec(sendPlannedRequest())
                 .exec(logRequestResult(totalRequests));
     }
 
@@ -189,7 +180,7 @@ public class ParallelScenario implements ScenarioExecutor {
         return exec(session -> {
             int ready = requestReadyCount.incrementAndGet();
             if (ready % 100 == 0 || ready == totalRequests) {
-                AsyncLogger.logf("Request 준비: %d/%d", ready, totalRequests);
+                AsyncLogger.logf("요청 준비: %d/%d", ready, totalRequests);
             }
             return session;
         })
@@ -205,8 +196,7 @@ public class ParallelScenario implements ScenarioExecutor {
             long simStartTime = session.getLong("simStartTime");
             long reqTimeMs = session.getLong("reqTimeMs");
             long targetTime = simStartTime + reqTimeMs;
-            long now = System.currentTimeMillis();
-            long waitTime = Math.max(0, targetTime - now);
+            long waitTime = Math.max(0, targetTime - System.currentTimeMillis());
             return session.set("waitTimeMs", waitTime);
         })
                 .pause(session -> Duration.ofMillis(session.getLong("waitTimeMs")));
@@ -214,50 +204,68 @@ public class ParallelScenario implements ScenarioExecutor {
 
     private ChainBuilder logRequestStart() {
         return exec(session -> {
-            long simStartTime = session.getLong("simStartTime");
-            long actualTime = System.currentTimeMillis() - simStartTime;
-            AsyncLogger.logf("요청 시작 [%s] User%d - 계획: %dms, 실제: %dms, 편차: %dms",
+            long actualTime = System.currentTimeMillis() - session.getLong("simStartTime");
+            AsyncLogger.logf(
+                    "요청 시작 [%s] User%d type=%s planned=%dms actual=%dms delta=%dms",
                     session.getString("reqId"),
                     session.getInt("reqUserId"),
+                    session.getString("reqType"),
                     session.getLong("reqTimeMs"),
                     actualTime,
-                    actualTime - session.getLong("reqTimeMs"));
+                    actualTime - session.getLong("reqTimeMs")
+            );
             return session;
         });
     }
 
-    private ChainBuilder sendBookingRequest() {
+    private ChainBuilder sendPlannedRequest() {
         return tryMax(10).on(
-                exec(
-                        http("좌석 점유")
-                                .post("/booking")
-                                .body(StringBody("#{reqBody}"))
-                                .check(
-                                        status().saveAs("responseStatus"),
-                                        status().in(200, 201),
-                                        responseTimeInMillis().saveAs("responseTime")
-                                )
+                doIf(session -> RequestType.SECTION_MOVE.name().equals(session.getString("reqType"))).then(
+                        exec(BookingActions.switchToReqTargetSection())
+                ),
+                doIf(session -> RequestType.BOOK.name().equals(session.getString("reqType"))).then(
+                        exec(BookingActions.switchToReqSection()).exitHereIfFailed(),
+                        exec(
+                                http("계획 좌석 점유")
+                                        .post("/booking")
+                                        .body(StringBody("#{reqBody}"))
+                                        .check(
+                                                status().saveAs("responseStatus"),
+                                                status().in(200, 201),
+                                                responseTimeInMillis().saveAs("responseTime")
+                                        )
+                        )
                 )
         );
     }
 
     private ChainBuilder logRequestResult(int totalRequests) {
         return exec(session -> {
-            String reqId = session.getString("reqId");
-            int status = session.getInt("responseStatus");
-            int userId = session.getInt("reqUserId");
-            long responseTime = session.getLong("responseTime");
+            String reqType = session.getString("reqType");
+            int status = RequestType.SECTION_MOVE.name().equals(reqType)
+                    ? session.getInt("sectionSwitchStatus")
+                    : session.getInt("responseStatus");
+            long responseTime = RequestType.SECTION_MOVE.name().equals(reqType)
+                    ? session.getLong("sectionSwitchResponseTime")
+                    : session.getLong("responseTime");
 
-            String symbol = (status == 200 || status == 201) ? "✓" : "✗";
-            AsyncLogger.logf("%s [%s] User%d Sec:%d Seat:%d 상태:%d 응답:%dms",
-                    symbol, reqId, userId,
+            boolean success = status == 200 || status == 201;
+            AsyncLogger.logf(
+                    "%s [%s] User%d type=%s section=%d target=%d seat=%d status=%d response=%dms",
+                    success ? "OK" : "KO",
+                    session.getString("reqId"),
+                    session.getInt("reqUserId"),
+                    reqType,
                     session.getInt("reqSection"),
+                    session.getInt("reqTargetSection"),
                     session.getInt("reqSeat"),
-                    status, responseTime);
+                    status,
+                    responseTime
+            );
 
             int completed = requestCompletedCount.incrementAndGet();
             if (completed % 100 == 0 || completed == totalRequests) {
-                AsyncLogger.logf("Request 완료: %d/%d", completed, totalRequests);
+                AsyncLogger.logf("요청 완료: %d/%d", completed, totalRequests);
             }
 
             return session;
