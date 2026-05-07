@@ -46,6 +46,14 @@ tasks.withType(JavaExec) {
             '--add-opens=java.base/java.io=ALL-UNNAMED',
             '--add-opens=java.base/sun.nio.ch=ALL-UNNAMED',
             '--enable-native-access=ALL-UNNAMED'
+
+    def benchProps = ['scenarioMode', 'targetUrl', 'planPath', 'targetEvent',
+                      'dynamicUserCount', 'fixedBookingAmount', 'maxRetryInBookingConflict', 'subscriptionType']
+    benchProps.each { key ->
+        if (project.hasProperty(key)) {
+            jvmArgs "-D${key}=${project.property(key)}"
+        }
+    }
 }
 
 gatling {

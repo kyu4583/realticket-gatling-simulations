@@ -20,6 +20,19 @@ public class SseHandler implements SubscriptionHandler {
     }
 
     @Override
+    public ActionBuilder subscribeWithSection(int targetEvent, int section) {
+        return sse("SSE 연결 section=" + section)
+                .get(ROOT_URL_HTTP + "/booking/seat/" + targetEvent + "?section=" + section);
+    }
+
+    @Override
+    public ActionBuilder reconnectToSection(int targetEvent) {
+        return sse("SSE 재연결")
+                .get(session -> ROOT_URL_HTTP + "/booking/seat/" + targetEvent
+                        + "?section=" + session.getInt("sseTargetSection"));
+    }
+
+    @Override
     public ActionBuilder reloadSeatStatus() {
         return sse.processUnmatchedMessages((messages, session) -> {
             Integer currentSection = session.get("currentSection");

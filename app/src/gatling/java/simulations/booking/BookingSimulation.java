@@ -8,6 +8,7 @@ import simulations.booking.core.SessionStore;
 import simulations.booking.scenario.DynamicScenario;
 import simulations.booking.scenario.ParallelScenario;
 import simulations.booking.scenario.ScenarioExecutor;
+import simulations.booking.scenario.SseReconnectScenario;
 import simulations.booking.scenario.StaticScenario;
 import simulations.booking.subscription.SseHandler;
 import simulations.booking.subscription.SubscriptionHandler;
@@ -64,6 +65,7 @@ public class BookingSimulation extends Simulation {
             case DYNAMIC -> new DynamicScenario();
             case STATIC -> new StaticScenario();
             case PARALLEL -> new ParallelScenario();
+            case SSE_RECONNECT -> new SseReconnectScenario();
         };
     }
 
