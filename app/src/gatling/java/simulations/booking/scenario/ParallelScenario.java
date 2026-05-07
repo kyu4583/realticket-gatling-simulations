@@ -172,6 +172,11 @@ public class ParallelScenario implements ScenarioExecutor {
                 .exec(synchronizeRequests(totalRequests))
                 .exec(waitUntilScheduledTime())
                 .exec(logRequestStart())
+                .exec(session -> session
+                        .set("sectionSwitchStatus", 0)
+                        .set("sectionSwitchResponseTime", 0L)
+                        .set("responseStatus", 0)
+                        .set("responseTime", 0L))
                 .exec(sendPlannedRequest())
                 .exec(logRequestResult(totalRequests));
     }
@@ -224,7 +229,7 @@ public class ParallelScenario implements ScenarioExecutor {
                         exec(BookingActions.switchToReqTargetSection())
                 ),
                 doIf(session -> RequestType.BOOK.name().equals(session.getString("reqType"))).then(
-                        exec(BookingActions.switchToReqSection()).exitHereIfFailed(),
+                        exec(BookingActions.switchToReqSection()),
                         exec(
                                 http("계획 좌석 점유")
                                         .post("/booking")
