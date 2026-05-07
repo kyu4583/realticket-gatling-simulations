@@ -56,6 +56,14 @@ tasks.withType(JavaExec) {
     }
 }
 
+def benchJvmArgs = []
+['scenarioMode', 'targetUrl', 'planPath', 'targetEvent',
+ 'dynamicUserCount', 'fixedBookingAmount', 'maxRetryInBookingConflict', 'subscriptionType'].each { key ->
+    if (project.hasProperty(key)) {
+        benchJvmArgs << "-D${key}=${project.property(key)}"
+    }
+}
+
 gatling {
     jvmArgs = ['-Dfile.encoding=UTF-8',
                '-Dconsole.encoding=UTF-8',
@@ -64,7 +72,7 @@ gatling {
                '--add-opens=java.base/java.util=ALL-UNNAMED',
                '--add-opens=java.base/java.io=ALL-UNNAMED',
                '--add-opens=java.base/sun.nio.ch=ALL-UNNAMED',
-               '--enable-native-access=ALL-UNNAMED']
+               '--enable-native-access=ALL-UNNAMED'] + benchJvmArgs
 }
 
 tasks.register('gatlingRunAndArchive') {
