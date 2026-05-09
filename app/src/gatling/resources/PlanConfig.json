@@ -1,7 +1,7 @@
 {
   "config": {
     "num_users": 500,
-    "seats_per_user": 2,
+    "seats_per_user": 0,
     "seed": 0,
     "snapshot_interval": 500,
     "network_delay": 50,
@@ -9,10 +9,7 @@
     "request_delay_min": 500,
     "request_delay_skew": 1,
     "no_collision": true,
-    "section_move_count": 1,
-    "section_move_delay_mean_ms": 1500,
-    "section_move_delay_min_ms": 500,
-    "section_move_delay_skew": 0,
+    "section_move_count": 10,
     "section_move_target_strategy": "round_robin"
   },
   "sections": [
