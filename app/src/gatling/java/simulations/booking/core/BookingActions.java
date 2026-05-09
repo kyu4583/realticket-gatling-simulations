@@ -116,18 +116,20 @@ public final class BookingActions {
                 .check(status().in(200, 304));
     }
 
-    public static ActionBuilder setBookingAmount() {
-        return http("예매 수량")
-                .post("/booking/count")
-                .body(StringBody(session -> {
-                    int bookingAmount = session.getInt("bookingAmount");
-                    return """
-                        {
-                          "bookingAmount": %d
-                        }
-                        """.formatted(bookingAmount);
-                }))
-                .check(status().in(200, 201));
+    public static ChainBuilder setBookingAmount() {
+        return doIf(session -> session.getInt("bookingAmount") > 0).then(
+                exec(http("예매 수량")
+                        .post("/booking/count")
+                        .body(StringBody(session -> {
+                            int bookingAmount = session.getInt("bookingAmount");
+                            return """
+                                {
+                                  "bookingAmount": %d
+                                }
+                                """.formatted(bookingAmount);
+                        }))
+                        .check(status().in(200, 201)))
+        );
     }
 
     public static ActionBuilder subscribeSeats(SubscriptionHandler handler) {
