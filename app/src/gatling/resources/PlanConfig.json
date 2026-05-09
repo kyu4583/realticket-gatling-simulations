@@ -1,6 +1,6 @@
 {
   "config": {
-    "num_users": 500,
+    "num_users": 700,
     "seats_per_user": 2,
     "seed": 0,
     "snapshot_interval": 500,
