@@ -95,6 +95,7 @@ class ReservationSimulator:
             section_move_delay_min_ms: int = 500,
             section_move_delay_skew: float = 0.0,
             section_move_target_strategy: str = "round_robin",
+            section_move_cooldown_ms: int = 0,
     ):
         if seed is not None:
             random.seed(seed)
@@ -112,6 +113,7 @@ class ReservationSimulator:
         self.section_move_delay_min_ms = section_move_delay_min_ms
         self.section_move_delay_skew = section_move_delay_skew
         self.section_move_target_strategy = section_move_target_strategy
+        self.section_move_cooldown_ms = section_move_cooldown_ms
 
         self.seats: dict[tuple[int, int], Optional[int]] = {}
         for sec_idx, section in enumerate(sections):
@@ -322,8 +324,31 @@ class ReservationSimulator:
                 )
                 out.append(req)
                 current_section = target
-                t += self._section_move_delay()
+                t += max(self._section_move_delay(), self.section_move_cooldown_ms)
         return out
+
+    def _apply_section_move_book_cooldown(self, section_move_requests: list) -> None:
+        """no_collision 모드에서 section_move 직후 cooldown 안에 있는 book 요청 time_ms 를 뒤로 민다.
+
+        section_move_cooldown_ms=0 이거나 collision 모드(시간이 좌석 선택에 영향)면 무적용.
+        """
+        if not self.no_collision or not section_move_requests or self.section_move_cooldown_ms <= 0:
+            return
+        sm_times_by_user: dict[int, list[int]] = defaultdict(list)
+        for sm in section_move_requests:
+            sm_times_by_user[sm.user].append(sm.time_ms)
+        for req in self.requests:
+            if req.type != "book":
+                continue
+            user_sm = sorted(sm_times_by_user.get(req.user, []))
+            changed = True
+            while changed:
+                changed = False
+                for sm_t in user_sm:
+                    if sm_t < req.time_ms < sm_t + self.section_move_cooldown_ms:
+                        req.time_ms = sm_t + self.section_move_cooldown_ms
+                        changed = True
+                        break
 
     def run(self) -> dict:
         """시뮬레이션 실행. simulation_duration_ms 는 결과에서 derive 됨 (입력 X)."""
@@ -331,6 +356,7 @@ class ReservationSimulator:
         # book_seats 자연 종료 시점 = 마지막 book 요청 time_ms (없으면 0)
         book_end_ms = max((r.time_ms for r in self.requests if r.type == "book"), default=0)
         section_move_requests = self._generate_section_moves(book_end_ms)
+        self._apply_section_move_book_cooldown(section_move_requests)
         result = self._process_results()
         sm_dicts = [r.to_dict() for r in section_move_requests]
         result["requests"].extend(sm_dicts)
@@ -560,6 +586,34 @@ def _run_selftest(case_filter=None):
         errs.extend(validate_plan(plan))
         return errs
 
+    @case("section_move_cooldown")
+    def _sm_cooldown():
+        COOLDOWN = 3000
+        sim = ReservationSimulator(sections=sections_small, num_users=3, seats_per_user=2,
+                                   seed=42, no_collision=True, section_move_count=2,
+                                   section_move_cooldown_ms=COOLDOWN)
+        plan = sim.run()
+        errs = []
+        sm_by_user: dict = defaultdict(list)
+        book_by_user: dict = defaultdict(list)
+        for r in plan["requests"]:
+            if r.get("type") == "section_move":
+                sm_by_user[r["user"]].append(r["time_ms"])
+            elif r.get("type", "book") == "book" and isinstance(r.get("user"), int):
+                book_by_user[r["user"]].append(r["time_ms"])
+        for user_id, sm_times in sm_by_user.items():
+            sm_sorted = sorted(sm_times)
+            for i in range(1, len(sm_sorted)):
+                gap = sm_sorted[i] - sm_sorted[i - 1]
+                if gap < COOLDOWN:
+                    errs.append(f"user {user_id}: section_move 간격 {gap}ms < cooldown {COOLDOWN}ms")
+            for bk_t in book_by_user.get(user_id, []):
+                for sm_t in sm_sorted:
+                    if sm_t < bk_t < sm_t + COOLDOWN:
+                        errs.append(f"user {user_id}: book@{bk_t}ms 가 section_move@{sm_t}ms 직후 cooldown 안에 있음")
+        errs.extend(validate_plan(plan))
+        return errs
+
     @case("no_region_fields")
     def _no_region():
         sim = ReservationSimulator(sections=sections_small, num_users=3, seats_per_user=2,
@@ -653,6 +707,7 @@ def main():
         "section_move_delay_min_ms": 500,
         "section_move_delay_skew": 0.0,
         "section_move_target_strategy": "round_robin",
+        "section_move_cooldown_ms": 0,
     }
     sections = None
 
@@ -704,6 +759,7 @@ def main():
         section_move_delay_min_ms=config["section_move_delay_min_ms"],
         section_move_delay_skew=config["section_move_delay_skew"],
         section_move_target_strategy=config["section_move_target_strategy"],
+        section_move_cooldown_ms=config.get("section_move_cooldown_ms", 0),
     )
 
     plan = simulator.run()
