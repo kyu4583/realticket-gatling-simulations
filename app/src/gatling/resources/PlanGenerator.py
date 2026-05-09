@@ -91,11 +91,7 @@ class ReservationSimulator:
             request_delay_skew: float = 0.0,
             no_collision: bool = False,
             section_move_count: int = 0,
-            section_move_delay_mean_ms: int = 1500,
-            section_move_delay_min_ms: int = 500,
-            section_move_delay_skew: float = 0.0,
             section_move_target_strategy: str = "round_robin",
-            section_move_cooldown_ms: int = 0,
     ):
         if seed is not None:
             random.seed(seed)
@@ -109,11 +105,7 @@ class ReservationSimulator:
         self.request_delay_skew = request_delay_skew
         self.no_collision = no_collision
         self._section_move_count = section_move_count
-        self.section_move_delay_mean_ms = section_move_delay_mean_ms
-        self.section_move_delay_min_ms = section_move_delay_min_ms
-        self.section_move_delay_skew = section_move_delay_skew
         self.section_move_target_strategy = section_move_target_strategy
-        self.section_move_cooldown_ms = section_move_cooldown_ms
 
         self.seats: dict[tuple[int, int], Optional[int]] = {}
         for sec_idx, section in enumerate(sections):
@@ -132,9 +124,7 @@ class ReservationSimulator:
         self.user_requested_seats: dict[int, set] = defaultdict(set)
         self.successful_requests: set[str] = set()
 
-        self.user_assigned_seats: dict[int, list] = {}
-        if self.no_collision:
-            self._assign_seats_to_users()
+        self._reserved_seats: set[tuple[int, int]] = set()  # no_collision 모드 충돌 방지용
 
         self.snapshots: dict[int, dict] = {0: {k: None for k in self.seats}}
         self.requests: list[Request] = []
@@ -142,17 +132,6 @@ class ReservationSimulator:
         self.collision_counter = 0
         self.section_count = len(sections)
         self.section_move_counter = 0
-
-    def _assign_seats_to_users(self):
-        all_seats = list(self.seats.keys())
-        random.shuffle(all_seats)
-        idx = 0
-        for user_id in range(1, self.num_users + 1):
-            self.user_assigned_seats[user_id] = []
-            for _ in range(self.seats_per_user):
-                if idx < len(all_seats):
-                    self.user_assigned_seats[user_id].append(all_seats[idx])
-                    idx += 1
 
     def _next_request_id(self) -> str:
         self.request_counter += 1
@@ -194,21 +173,29 @@ class ReservationSimulator:
             effective_snapshot_time = max(available_times) if available_times else 0
         return dict(self.snapshots.get(effective_snapshot_time, self.snapshots[0]))
 
-    def _choose_seat(self, user_id: int, current_time: int) -> Optional[tuple[int, int]]:
+    def _choose_seat(self, user_id: int, current_time: int, current_section: int) -> Optional[tuple[int, int]]:
+        already_requested = self.user_requested_seats[user_id]
         if self.no_collision:
-            assigned = self.user_assigned_seats.get(user_id, [])
-            already_requested = self.user_requested_seats[user_id]
-            available = [seat for seat in assigned if seat not in already_requested]
+            available = [
+                seat for seat in self.seats
+                if seat[0] == current_section
+                   and seat not in self._reserved_seats
+                   and seat not in already_requested
+            ]
             if not available:
                 return None
-            chosen = available[0]
+            chosen = random.choice(available)
             self.user_requested_seats[user_id].add(chosen)
+            self._reserved_seats.add(chosen)
             return chosen
         else:
             view = self._get_user_view(user_id, current_time)
-            available = [seat for seat, occupied_time in view.items() if occupied_time is None]
-            already_requested = self.user_requested_seats[user_id]
-            available = [seat for seat in available if seat not in already_requested]
+            available = [
+                seat for seat, occupied_time in view.items()
+                if occupied_time is None
+                   and seat[0] == current_section
+                   and seat not in already_requested
+            ]
             if not available:
                 return None
             chosen = random.choice(available)
@@ -219,19 +206,6 @@ class ReservationSimulator:
         snapshot_time = self._get_snapshot_time(time_ms)
         if snapshot_time not in self.snapshots:
             self.snapshots[snapshot_time] = dict(self.seats)
-
-    def _section_move_delay(self) -> int:
-        min_d = self.section_move_delay_min_ms
-        mean_d = self.section_move_delay_mean_ms
-        skew = self.section_move_delay_skew
-        if skew <= 0:
-            delay = int(random.expovariate(1 / mean_d))
-            return max(min_d, delay)
-        else:
-            range_d = (mean_d - min_d) * 2
-            u = random.random()
-            delay = int(min_d + (u ** skew) * range_d)
-            return max(min_d, delay)
 
     def _choose_target_section(self, current_section: int, user_id: int, move_idx: int) -> int:
         strategy = self.section_move_target_strategy
@@ -246,123 +220,87 @@ class ReservationSimulator:
         else:
             raise ValueError(f"section_move_target_strategy='{strategy}' 미지원 (round_robin | random)")
 
-    def _run_book_seats(self):
-        """book_seats 를 자연 종료 시점까지 실행.
+    def _run_simulation(self):
+        """통합 이벤트 큐 — book와 section_move를 동일 타임라인·딜레이로 처리.
 
-        모든 user 가 seats_per_user 만큼 좌석을 확보하면 queue 가 비어 종료.
-        request_delay_mean / num_users / seats_per_user 가 자연 종료 시점을 결정.
-        Buggy 시나리오 (no progress) 대비 MAX_SIMULATION_DURATION_MS 안전 상한.
+        모든 유저가 seats_per_user 확보 + section_move_count 완료 시 종료.
+        book/section_move 간 간격은 동일한 _request_delay()를 사용하며,
+        남은 비율에 따라 두 액션을 확률적으로 인터리브한다.
         """
         event_queue: list = []
+        user_sm_done: dict[int, int] = defaultdict(int)
+        user_current_section: dict[int, int] = defaultdict(int)
+
         for user_id in range(1, self.num_users + 1):
-            if self.user_secured[user_id] >= self.seats_per_user:
-                continue
-            start_time = self._request_delay()
-            heapq.heappush(event_queue, Event(start_time, user_id))
+            heapq.heappush(event_queue, Event(self._request_delay(), user_id))
 
         while event_queue:
             event = heapq.heappop(event_queue)
             if event.time_ms >= MAX_SIMULATION_DURATION_MS:
                 raise RuntimeError(
-                    f"book_seats 가 {MAX_SIMULATION_DURATION_MS}ms 안전 상한을 초과 — "
-                    f"시뮬레이션이 자연 종료되지 못함. num_users / seats_per_user / request_delay 점검 필요."
+                    f"시뮬레이션이 {MAX_SIMULATION_DURATION_MS}ms 안전 상한 초과 — "
+                    f"자연 종료 불가. num_users / seats_per_user / request_delay 점검 필요."
                 )
             user_id = event.user_id
-            if self.user_secured[user_id] >= self.seats_per_user:
-                continue
-            self._update_snapshot(event.time_ms)
-            seat = self._choose_seat(user_id, event.time_ms)
-            if seat is None:
-                next_snapshot = self._get_snapshot_time(event.time_ms) + self.snapshot_interval_ms
-                retry_time = next_snapshot + random.randint(10, 100)
-                heapq.heappush(event_queue, Event(retry_time, user_id))
-                continue
-            section, seat_num = seat
-            request = Request(
-                id=self._next_request_id(),
-                time_ms=event.time_ms,
-                user=user_id,
-                section=section,
-                seat=seat_num,
-                type="book",
-            )
-            self.requests.append(request)
-            if self.seats[(section, seat_num)] is None:
-                self.seats[(section, seat_num)] = event.time_ms
-                self.user_secured[user_id] += 1
-                self.successful_requests.add(request.id)
-            if self.user_secured[user_id] < self.seats_per_user:
-                delay = self._request_delay()
-                next_time = event.time_ms + delay
-                heapq.heappush(event_queue, Event(next_time, user_id))
+            books_left = self.seats_per_user - self.user_secured[user_id]
+            sm_left = self._section_move_count - user_sm_done[user_id]
 
-    def _generate_section_moves(self, book_end_ms: int) -> list:
-        """section_move 요청을 [0, book_end_ms] 범위에 분포.
+            if books_left <= 0 and sm_left <= 0:
+                continue
 
-        book_end_ms 는 _run_book_seats 의 자연 종료 시점 — section_move 가
-        본예매 활동 시간 안에서 일어나도록 같은 윈도우 사용.
-        """
-        if self._section_move_count <= 0 or book_end_ms <= 0:
-            return []
-        out: list[Request] = []
-        for user_id in range(1, self.num_users + 1):
-            current_section = 0
-            t = self._section_move_delay()
-            for move_idx in range(self._section_move_count):
-                if t >= book_end_ms:
-                    break
-                target = self._choose_target_section(current_section, user_id, move_idx)
+            # 남은 비율로 확률적 인터리브
+            if sm_left > 0 and books_left > 0:
+                do_sm = random.random() < (sm_left / (sm_left + books_left))
+            else:
+                do_sm = sm_left > 0
+
+            if do_sm:
+                current_section = user_current_section[user_id]
+                target = self._choose_target_section(current_section, user_id, user_sm_done[user_id])
                 self.section_move_counter += 1
                 req = Request(
                     id=f"SM{self.section_move_counter}",
-                    time_ms=t,
+                    time_ms=event.time_ms,
                     user=user_id,
                     section=current_section,
                     seat=-1,
                     type="section_move",
                     target_section=target,
                 )
-                out.append(req)
-                current_section = target
-                t += max(self._section_move_delay(), self.section_move_cooldown_ms)
-        return out
+                self.requests.append(req)
+                user_current_section[user_id] = target
+                user_sm_done[user_id] += 1
+            else:
+                self._update_snapshot(event.time_ms)
+                seat = self._choose_seat(user_id, event.time_ms, user_current_section[user_id])
+                if seat is None:
+                    next_snapshot = self._get_snapshot_time(event.time_ms) + self.snapshot_interval_ms
+                    retry_time = next_snapshot + random.randint(10, 100)
+                    heapq.heappush(event_queue, Event(retry_time, user_id))
+                    continue
+                section, seat_num = seat
+                request = Request(
+                    id=self._next_request_id(),
+                    time_ms=event.time_ms,
+                    user=user_id,
+                    section=section,
+                    seat=seat_num,
+                    type="book",
+                )
+                self.requests.append(request)
+                if self.seats[(section, seat_num)] is None:
+                    self.seats[(section, seat_num)] = event.time_ms
+                    self.user_secured[user_id] += 1
+                    self.successful_requests.add(request.id)
 
-    def _apply_section_move_book_cooldown(self, section_move_requests: list) -> None:
-        """no_collision 모드에서 section_move 직후 cooldown 안에 있는 book 요청 time_ms 를 뒤로 민다.
-
-        section_move_cooldown_ms=0 이거나 collision 모드(시간이 좌석 선택에 영향)면 무적용.
-        """
-        if not self.no_collision or not section_move_requests or self.section_move_cooldown_ms <= 0:
-            return
-        sm_times_by_user: dict[int, list[int]] = defaultdict(list)
-        for sm in section_move_requests:
-            sm_times_by_user[sm.user].append(sm.time_ms)
-        for req in self.requests:
-            if req.type != "book":
-                continue
-            user_sm = sorted(sm_times_by_user.get(req.user, []))
-            changed = True
-            while changed:
-                changed = False
-                for sm_t in user_sm:
-                    if sm_t < req.time_ms < sm_t + self.section_move_cooldown_ms:
-                        req.time_ms = sm_t + self.section_move_cooldown_ms
-                        changed = True
-                        break
+            if (self.seats_per_user - self.user_secured[user_id] > 0
+                    or self._section_move_count - user_sm_done[user_id] > 0):
+                heapq.heappush(event_queue, Event(event.time_ms + self._request_delay(), user_id))
 
     def run(self) -> dict:
         """시뮬레이션 실행. simulation_duration_ms 는 결과에서 derive 됨 (입력 X)."""
-        self._run_book_seats()
-        # book_seats 자연 종료 시점 = 마지막 book 요청 time_ms (없으면 0)
-        book_end_ms = max((r.time_ms for r in self.requests if r.type == "book"), default=0)
-        section_move_requests = self._generate_section_moves(book_end_ms)
-        self._apply_section_move_book_cooldown(section_move_requests)
-        result = self._process_results()
-        sm_dicts = [r.to_dict() for r in section_move_requests]
-        result["requests"].extend(sm_dicts)
-        result["requests"].sort(key=lambda r: (r["time_ms"], r["id"]))
-        # simulation_duration_ms 는 _process_results 가 max(time_ms) 로 산출. 덮어쓰지 않음.
-        return result
+        self._run_simulation()
+        return self._process_results()
 
     def _process_results(self) -> dict:
         user_requests: dict[int, list[Request]] = defaultdict(list)
@@ -433,13 +371,14 @@ class ReservationSimulator:
 
         final_requests = []
         for req in self.requests:
-            if req.type != "book":
-                continue
-            if req.id in loser_next_requests:
-                user_field = {"collision_loser": loser_next_requests[req.id]}
-            else:
-                user_field = req.user
-            final_requests.append(req.to_dict(user_field))
+            if req.type == "section_move":
+                final_requests.append(req.to_dict())
+            elif req.type == "book":
+                if req.id in loser_next_requests:
+                    user_field = {"collision_loser": loser_next_requests[req.id]}
+                else:
+                    user_field = req.user
+                final_requests.append(req.to_dict(user_field))
         final_requests.sort(key=lambda r: (r["time_ms"], r["id"]))
 
         collision_request_count = sum(len(cg.request_ids) for cg in collision_groups)
@@ -465,7 +404,7 @@ class ReservationSimulator:
             "request_delay_skew": self.request_delay_skew,
             "no_collision": self.no_collision,
             "num_sections": self.section_count,
-            "simulation_duration_ms": max((r["time_ms"] for r in final_requests), default=0),
+            "simulation_duration_ms": max((r.time_ms for r in self.requests), default=0),
             "users_completed": sum(1 for c in self.user_secured.values() if c >= self.seats_per_user)
         }
 
@@ -578,39 +517,6 @@ def _run_selftest(case_filter=None):
         sm = [r for r in plan["requests"] if r.get("type") == "section_move"]
         if not sm:
             errs.append("section_move 요청 0건 (section_move_count=2인데)")
-        # section_move 들이 book_seats 자연 종료 시점 이내인지 검증
-        book_end = max((r["time_ms"] for r in plan["requests"] if r.get("type") == "book"), default=0)
-        sm_after_end = [r for r in sm if r["time_ms"] > book_end]
-        if sm_after_end:
-            errs.append(f"section_move {len(sm_after_end)}건이 book_end={book_end}ms 이후 — 본예매 윈도우 밖")
-        errs.extend(validate_plan(plan))
-        return errs
-
-    @case("section_move_cooldown")
-    def _sm_cooldown():
-        COOLDOWN = 3000
-        sim = ReservationSimulator(sections=sections_small, num_users=3, seats_per_user=2,
-                                   seed=42, no_collision=True, section_move_count=2,
-                                   section_move_cooldown_ms=COOLDOWN)
-        plan = sim.run()
-        errs = []
-        sm_by_user: dict = defaultdict(list)
-        book_by_user: dict = defaultdict(list)
-        for r in plan["requests"]:
-            if r.get("type") == "section_move":
-                sm_by_user[r["user"]].append(r["time_ms"])
-            elif r.get("type", "book") == "book" and isinstance(r.get("user"), int):
-                book_by_user[r["user"]].append(r["time_ms"])
-        for user_id, sm_times in sm_by_user.items():
-            sm_sorted = sorted(sm_times)
-            for i in range(1, len(sm_sorted)):
-                gap = sm_sorted[i] - sm_sorted[i - 1]
-                if gap < COOLDOWN:
-                    errs.append(f"user {user_id}: section_move 간격 {gap}ms < cooldown {COOLDOWN}ms")
-            for bk_t in book_by_user.get(user_id, []):
-                for sm_t in sm_sorted:
-                    if sm_t < bk_t < sm_t + COOLDOWN:
-                        errs.append(f"user {user_id}: book@{bk_t}ms 가 section_move@{sm_t}ms 직후 cooldown 안에 있음")
         errs.extend(validate_plan(plan))
         return errs
 
@@ -676,9 +582,6 @@ def main():
     parser.add_argument("--no-collision", action="store_true")
     parser.add_argument("--section-move-count", type=int, default=None,
                         help="유저당 section 이동 횟수 (기본: 0)")
-    parser.add_argument("--section-move-delay-mean", type=int, default=None)
-    parser.add_argument("--section-move-delay-min", type=int, default=None)
-    parser.add_argument("--section-move-delay-skew", type=float, default=None)
     parser.add_argument("--section-move-target-strategy", type=str, default=None,
                         choices=["round_robin", "random"])
     parser.add_argument("--output", "-o", type=str, help="출력 파일")
@@ -703,11 +606,7 @@ def main():
         "request_delay_skew": 0.0,
         "no_collision": False,
         "section_move_count": 0,
-        "section_move_delay_mean_ms": 1500,
-        "section_move_delay_min_ms": 500,
-        "section_move_delay_skew": 0.0,
         "section_move_target_strategy": "round_robin",
-        "section_move_cooldown_ms": 0,
     }
     sections = None
 
@@ -729,9 +628,6 @@ def main():
     if args.request_delay_skew is not None: config["request_delay_skew"] = args.request_delay_skew
     if args.no_collision: config["no_collision"] = True
     if args.section_move_count is not None: config["section_move_count"] = args.section_move_count
-    if args.section_move_delay_mean is not None: config["section_move_delay_mean_ms"] = args.section_move_delay_mean
-    if args.section_move_delay_min is not None: config["section_move_delay_min_ms"] = args.section_move_delay_min
-    if args.section_move_delay_skew is not None: config["section_move_delay_skew"] = args.section_move_delay_skew
     if args.section_move_target_strategy is not None: config["section_move_target_strategy"] = args.section_move_target_strategy
 
     if sections is None:
@@ -755,11 +651,7 @@ def main():
         request_delay_skew=config["request_delay_skew"],
         no_collision=config["no_collision"],
         section_move_count=config["section_move_count"],
-        section_move_delay_mean_ms=config["section_move_delay_mean_ms"],
-        section_move_delay_min_ms=config["section_move_delay_min_ms"],
-        section_move_delay_skew=config["section_move_delay_skew"],
         section_move_target_strategy=config["section_move_target_strategy"],
-        section_move_cooldown_ms=config.get("section_move_cooldown_ms", 0),
     )
 
     plan = simulator.run()
