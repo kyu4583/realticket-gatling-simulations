@@ -5,7 +5,7 @@
     "seed": 0,
     "snapshot_interval": 500,
     "network_delay": 50,
-    "request_delay_mean": 6000,
+    "request_delay_mean": 7000,
     "request_delay_min": 5000,
     "request_delay_skew": 1,
     "no_collision": true,
